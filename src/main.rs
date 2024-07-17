@@ -206,6 +206,7 @@ impl World {
         let width = data.read_u32::<LittleEndian>().unwrap();
         let height = data.read_u32::<LittleEndian>().unwrap();
         let tile_count = data.read_u32::<LittleEndian>().unwrap();
+        data.set_position(data.position() + 5);
         self.name = String::from_utf8_lossy(&name).to_string();
         self.width = width;
         self.height = height;
@@ -228,6 +229,11 @@ impl World {
 
             if (tile.flags & 0x2) != 0 {
                 data.read_u16::<LittleEndian>().unwrap();
+            }
+
+            if tile.foreground_item_id == 8 {
+                println!("{}", data.position());
+                println!("Tile: {:?}", tile);
             }
 
             self.tiles.push(tile);
@@ -267,7 +273,6 @@ impl World {
             for y in 0..self.height {
                 // get current tile
                 let tile = &self.tiles[(y * self.width + x) as usize];
-                println!("Tile: {:?}", tile);
                 let item = match self
                     .item_database
                     .get_item(&(tile.foreground_item_id as u32))
