@@ -4,6 +4,7 @@ use std::{fs::File, sync::Arc};
 use byteorder::{LittleEndian, ReadBytesExt};
 use gtitem_r::load_from_file;
 use gtitem_r::structs::ItemDatabase;
+use image::{ImageBuffer, Rgba};
 
 pub struct World {
     pub name: String,
@@ -205,7 +206,6 @@ impl World {
         let width = data.read_u32::<LittleEndian>().unwrap();
         let height = data.read_u32::<LittleEndian>().unwrap();
         let tile_count = data.read_u32::<LittleEndian>().unwrap();
-
         self.name = String::from_utf8_lossy(&name).to_string();
         self.width = width;
         self.height = height;
@@ -213,6 +213,8 @@ impl World {
 
         // tiles
         for _ in 0..tile_count {
+            let pos = data.position();
+            println!("pos: {}", pos);
             let mut tile = Tile::new(0, 0, 0, 0);
             tile.foreground_item_id = data.read_u16::<LittleEndian>().unwrap();
             tile.background_item_id = data.read_u16::<LittleEndian>().unwrap();
@@ -254,7 +256,52 @@ impl World {
         data.read_u16::<LittleEndian>().unwrap(); // unknown
         self.current_weather = data.read_u16::<LittleEndian>().unwrap();
 
-        println!("{:?}", self.tiles.get(6000 - 3));
+        let pos = data.position();
+        println!("last pos: {}", pos);
+        let item_pixel_size = 32;
+        let img_width = self.width * item_pixel_size;
+        let img_height = self.height * item_pixel_size;
+        let mut img = ImageBuffer::<Rgba<u8>, Vec<u8>>::new(img_width as u32, img_height as u32);
+
+        for x in 0..self.width {
+            for y in 0..self.height {
+                // get current tile
+                let tile = &self.tiles[(y * self.width + x) as usize];
+                println!("Tile: {:?}", tile);
+                let item = match self
+                    .item_database
+                    .get_item(&(tile.foreground_item_id as u32))
+                {
+                    Some(item) => item,
+                    None => {
+                        println!("Item not found: {}", tile.foreground_item_id); // 65280
+                        continue;
+                    }
+                };
+                let mut color = Rgba([0, 0, 0, 255]);
+                if item.name == "Blank" {
+                    color = Rgba([0, 0, 255, 255]);
+                } else if !item.name.contains("Seed") {
+                    color = Rgba([139, 69, 19, 255])
+                } else if item.name.contains("Seed") {
+                    color = Rgba([0, 255, 0, 255])
+                } else if item.name.contains("White") {
+                    color = Rgba([255, 255, 255, 255])
+                } else if item.name.contains("Bedrock") {
+                    color = Rgba([0, 0, 0, 255])
+                }
+
+                for px in 0..item_pixel_size {
+                    for py in 0..item_pixel_size {
+                        let pixel_x = (x * item_pixel_size + px) as u32;
+                        let pixel_y = (y * item_pixel_size + py) as u32;
+                        img.put_pixel(pixel_x, pixel_y, color);
+                    }
+                }
+            }
+        }
+
+        img.save("output.png").unwrap();
     }
 
     fn get_extra_tile_data(&self, tile: &mut Tile, data: &mut Cursor<&[u8]>, item_type: u8) {
@@ -282,10 +329,10 @@ impl World {
                 let owner_uid = data.read_u32::<LittleEndian>().unwrap();
                 let access_count = data.read_u32::<LittleEndian>().unwrap();
                 let mut access_uids = Vec::new();
-                let world_bpm = data.read_u32::<LittleEndian>().unwrap();
                 for _ in 0..access_count {
                     access_uids.push(data.read_u32::<LittleEndian>().unwrap());
                 }
+                let world_bpm = data.read_u32::<LittleEndian>().unwrap();
 
                 tile.tile_type = TileType::Lock {
                     settings,
@@ -294,6 +341,7 @@ impl World {
                     access_uids,
                     world_bpm,
                 };
+                data.set_position(data.position() + 4);
             }
             4 => {
                 let time_passed = data.read_u32::<LittleEndian>().unwrap();
