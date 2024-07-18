@@ -43,7 +43,8 @@ pub enum TileType {
         owner_uid: u32,
         access_count: u32,
         access_uids: Vec<u32>,
-        world_bpm: u32,
+        minimum_level: u8,
+        unknown_1: [u8; 7],
     },
     Seed {
         time_passed: u32,
@@ -343,16 +344,18 @@ impl World {
                 for _ in 0..access_count {
                     access_uids.push(data.read_u32::<LittleEndian>().unwrap());
                 }
-                let world_bpm = data.read_u32::<LittleEndian>().unwrap();
+                let minimum_level = data.read_u8().unwrap();
+                let mut unknown_1 = [0; 7];
+                data.read_exact(&mut unknown_1).unwrap();
 
                 tile.tile_type = TileType::Lock {
                     settings,
                     owner_uid,
                     access_count,
                     access_uids,
-                    world_bpm,
+                    minimum_level,
+                    unknown_1,
                 };
-                data.set_position(data.position() + 4);
             }
             4 => {
                 let time_passed = data.read_u32::<LittleEndian>().unwrap();
