@@ -142,6 +142,9 @@ pub enum TileType {
     WeatherMachine {
         item_id: u32,
     },
+    DataBedrock {
+        unknown_1: [u8; 21],
+    },
 }
 
 #[derive(Debug)]
@@ -153,7 +156,7 @@ pub struct Dropped {
 
 #[derive(Debug)]
 pub struct DroppedItem {
-    pub id: u32,
+    pub id: u16,
     pub x: f32,
     pub y: f32,
     pub count: u8,
@@ -214,8 +217,6 @@ impl World {
 
         // tiles
         for _ in 0..tile_count {
-            let pos = data.position();
-            println!("pos: {}", pos);
             let mut tile = Tile::new(0, 0, 0, 0);
             tile.foreground_item_id = data.read_u16::<LittleEndian>().unwrap();
             tile.background_item_id = data.read_u16::<LittleEndian>().unwrap();
@@ -231,18 +232,14 @@ impl World {
                 data.read_u16::<LittleEndian>().unwrap();
             }
 
-            if tile.foreground_item_id == 8 {
-                println!("{}", data.position());
-                println!("Tile: {:?}", tile);
-            }
-
             self.tiles.push(tile);
         }
 
+        data.set_position(data.position() + 12); // it exist in the binary, i don't know what it is
         self.dropped.items_count = data.read_u32::<LittleEndian>().unwrap();
         self.dropped.last_dropped_item_uid = data.read_u32::<LittleEndian>().unwrap();
         for _ in 0..self.dropped.items_count {
-            let id = data.read_u32::<LittleEndian>().unwrap();
+            let id = data.read_u16::<LittleEndian>().unwrap();
             let x = data.read_f32::<LittleEndian>().unwrap();
             let y = data.read_f32::<LittleEndian>().unwrap();
             let count = data.read_u8().unwrap();
@@ -262,8 +259,6 @@ impl World {
         data.read_u16::<LittleEndian>().unwrap(); // unknown
         self.current_weather = data.read_u16::<LittleEndian>().unwrap();
 
-        let pos = data.position();
-        println!("last pos: {}", pos);
         let item_pixel_size = 32;
         let img_width = self.width * item_pixel_size;
         let img_height = self.height * item_pixel_size;
@@ -273,27 +268,38 @@ impl World {
             for y in 0..self.height {
                 // get current tile
                 let tile = &self.tiles[(y * self.width + x) as usize];
-                let item = match self
+                let item = self
                     .item_database
                     .get_item(&(tile.foreground_item_id as u32))
-                {
-                    Some(item) => item,
-                    None => {
-                        println!("Item not found: {}", tile.foreground_item_id); // 65280
-                        continue;
-                    }
-                };
+                    .unwrap();
                 let mut color = Rgba([0, 0, 0, 255]);
                 if item.name == "Blank" {
                     color = Rgba([0, 0, 255, 255]);
                 } else if !item.name.contains("Seed") {
                     color = Rgba([139, 69, 19, 255])
-                } else if item.name.contains("Seed") {
+                }
+                if item.name.contains("Seed") {
                     color = Rgba([0, 255, 0, 255])
-                } else if item.name.contains("White") {
+                }
+                if item.name.contains("Door") {
                     color = Rgba([255, 255, 255, 255])
-                } else if item.name.contains("Bedrock") {
+                }
+                if item.name.contains("Rock") {
+                    color = Rgba([128, 128, 128, 255])
+                }
+                if item.name.contains("Lava") {
+                    color = Rgba([255, 0, 0, 255])
+                }
+                if item.name.contains("Bedrock") {
                     color = Rgba([0, 0, 0, 255])
+                }
+                if item.name.contains("Lock") {
+                    // yellow
+                    color = Rgba([255, 255, 0, 255])
+                }
+                if item.name.contains("Sign") {
+                    // orange
+                    color = Rgba([255, 165, 0, 255])
                 }
 
                 for px in 0..item_pixel_size {
@@ -585,6 +591,12 @@ impl World {
                 let item_id = data.read_u32::<LittleEndian>().unwrap();
 
                 tile.tile_type = TileType::WeatherMachine { item_id };
+            }
+            42 => {
+                let mut unknown_1 = [0; 21];
+                data.read_exact(&mut unknown_1).unwrap();
+
+                tile.tile_type = TileType::DataBedrock { unknown_1 };
             }
             _ => {
                 tile.tile_type = TileType::Basic;
