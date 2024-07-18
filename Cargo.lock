@@ -270,20 +270,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "gt-world"
-version = "0.1.0"
-dependencies = [
- "byteorder",
- "gtitem-r",
- "image",
-]
-
-[[package]]
 name = "gtitem-r"
 version = "0.1.0"
 source = "git+https://github.com/cloei/gtitem-r#982c7e052cd9047cb688e7620f7aa61da6bb78ea"
 dependencies = [
  "byteorder",
+]
+
+[[package]]
+name = "gtworld-r"
+version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "gtitem-r",
+ "image",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 [package]
-name = "gt-world"
+name = "gtworld-r"
 version = "0.1.0"
 edition = "2021"
 description = "Growtopia World tile serialization"
