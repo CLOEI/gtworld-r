@@ -1,10 +1,8 @@
+use gtitem_r::structs::ItemDatabase;
 use std::io::{Cursor, Read};
-use std::{fs::File, sync::Arc};
+use std::sync::Arc;
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use gtitem_r::load_from_file;
-use gtitem_r::structs::ItemDatabase;
-use image::{ImageBuffer, Rgba};
 
 pub struct World {
     pub name: String,
@@ -259,61 +257,6 @@ impl World {
         self.base_weather = data.read_u16::<LittleEndian>().unwrap();
         data.read_u16::<LittleEndian>().unwrap(); // unknown
         self.current_weather = data.read_u16::<LittleEndian>().unwrap();
-
-        let item_pixel_size = 32;
-        let img_width = self.width * item_pixel_size;
-        let img_height = self.height * item_pixel_size;
-        let mut img = ImageBuffer::<Rgba<u8>, Vec<u8>>::new(img_width as u32, img_height as u32);
-
-        for x in 0..self.width {
-            for y in 0..self.height {
-                // get current tile
-                let tile = &self.tiles[(y * self.width + x) as usize];
-                let item = self
-                    .item_database
-                    .get_item(&(tile.foreground_item_id as u32))
-                    .unwrap();
-                let mut color = Rgba([0, 0, 0, 255]);
-                if item.name == "Blank" {
-                    color = Rgba([0, 0, 255, 255]);
-                } else if !item.name.contains("Seed") {
-                    color = Rgba([139, 69, 19, 255])
-                }
-                if item.name.contains("Seed") {
-                    color = Rgba([0, 255, 0, 255])
-                }
-                if item.name.contains("Door") {
-                    color = Rgba([255, 255, 255, 255])
-                }
-                if item.name.contains("Rock") {
-                    color = Rgba([128, 128, 128, 255])
-                }
-                if item.name.contains("Lava") {
-                    color = Rgba([255, 0, 0, 255])
-                }
-                if item.name.contains("Bedrock") {
-                    color = Rgba([0, 0, 0, 255])
-                }
-                if item.name.contains("Lock") {
-                    // yellow
-                    color = Rgba([255, 255, 0, 255])
-                }
-                if item.name.contains("Sign") {
-                    // orange
-                    color = Rgba([255, 165, 0, 255])
-                }
-
-                for px in 0..item_pixel_size {
-                    for py in 0..item_pixel_size {
-                        let pixel_x = (x * item_pixel_size + px) as u32;
-                        let pixel_y = (y * item_pixel_size + py) as u32;
-                        img.put_pixel(pixel_x, pixel_y, color);
-                    }
-                }
-            }
-        }
-
-        img.save("output.png").unwrap();
     }
 
     fn get_extra_tile_data(&self, tile: &mut Tile, data: &mut Cursor<&[u8]>, item_type: u8) {
@@ -606,66 +549,14 @@ impl World {
             }
         };
     }
-
-    fn action_to_item_type(&self, input: u8) -> u8 {
-        match input {
-            2 => 1,
-            3 => 3,
-            10 => 2,
-            13 => 1,
-            19 => 4,
-            26 => 1,
-            33 => 6,
-            34 => 7,
-            36 => 8,
-            38 => 9,
-            40 => 10,
-            43 => 1,
-            46 => 11,
-            47 => 12,
-            48 => 13,
-            49 => 14,
-            51 => 15,
-            52 => 16,
-            53 => 17,
-            54 => 18,
-            55 => 19,
-            56 => 20,
-            57 => 21,
-            59 => 22,
-            61 => 23,
-            62 => 24,
-            63 => 25,
-            65 => 26,
-            66 => 27,
-            67 => 28,
-            68 => 29,
-            71 => 30,
-            72 => 31,
-            73 => 32,
-            74 => 33,
-            75 => 34,
-            76 => 35,
-            77 => 36,
-            78 => 37,
-            79 => 38,
-            80 => 39,
-            81 => 40,
-            82 => 41,
-            83 => 43,
-            84 => 44,
-            85 => 45,
-            86 => 33,
-            87 => 47,
-            88 => 48,
-            89 => 49,
-            92 => 51,
-            _ => 0,
-        }
-    }
 }
 
-fn main() {
+#[test]
+fn test_render_world() {
+    use gtitem_r::load_from_file;
+    use image::{ImageBuffer, Rgba};
+    use std::fs::File;
+
     let item_database = Arc::new(load_from_file("items.dat").unwrap());
     let mut world = World::new(item_database);
     // get byte from world.dat file
@@ -673,4 +564,59 @@ fn main() {
     let mut data = Vec::new();
     file.read_to_end(&mut data).unwrap();
     world.parse(&data);
+
+    let item_pixel_size = 32;
+    let img_width = world.width * item_pixel_size;
+    let img_height = world.height * item_pixel_size;
+    let mut img = ImageBuffer::<Rgba<u8>, Vec<u8>>::new(img_width as u32, img_height as u32);
+
+    for x in 0..world.width {
+        for y in 0..world.height {
+            // get current tile
+            let tile = &world.tiles[(y * world.width + x) as usize];
+            let item = world
+                .item_database
+                .get_item(&(tile.foreground_item_id as u32))
+                .unwrap();
+            let mut color = Rgba([0, 0, 0, 255]);
+            if item.name == "Blank" {
+                color = Rgba([0, 0, 255, 255]);
+            } else if !item.name.contains("Seed") {
+                color = Rgba([139, 69, 19, 255])
+            }
+            if item.name.contains("Seed") {
+                color = Rgba([0, 255, 0, 255])
+            }
+            if item.name.contains("Door") {
+                color = Rgba([255, 255, 255, 255])
+            }
+            if item.name.contains("Rock") {
+                color = Rgba([128, 128, 128, 255])
+            }
+            if item.name.contains("Lava") {
+                color = Rgba([255, 0, 0, 255])
+            }
+            if item.name.contains("Bedrock") {
+                color = Rgba([0, 0, 0, 255])
+            }
+            if item.name.contains("Lock") {
+                // yellow
+                color = Rgba([255, 255, 0, 255])
+            }
+            if item.name.contains("Sign") {
+                // orange
+                color = Rgba([255, 165, 0, 255])
+            }
+
+            for px in 0..item_pixel_size {
+                for py in 0..item_pixel_size {
+                    let pixel_x = (x * item_pixel_size + px) as u32;
+                    let pixel_y = (y * item_pixel_size + py) as u32;
+                    img.put_pixel(pixel_x, pixel_y, color);
+                }
+            }
+        }
+    }
+
+    img.save("output.png").unwrap();
 }
