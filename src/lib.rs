@@ -200,8 +200,9 @@ impl World {
     }
 
     pub fn parse(&mut self, data: &[u8]) {
-        // first 6 byte is unknown
         let mut data = Cursor::new(data);
+        // first 6 byte is unknown
+        data.set_position(data.position() + 6);
         let str_len = data.read_u16::<LittleEndian>().unwrap();
         let mut name = vec![0; str_len as usize];
         data.read_exact(&mut name).unwrap();
