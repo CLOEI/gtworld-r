@@ -292,6 +292,10 @@ impl World {
                 let mut unknown_1 = [0; 7];
                 data.read_exact(&mut unknown_1).unwrap();
 
+                if tile.foreground_item_id == 5814 {
+                    let _ = data.read_exact([0; 16].as_mut());
+                }
+
                 tile.tile_type = TileType::Lock {
                     settings,
                     owner_uid,
