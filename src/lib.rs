@@ -183,7 +183,7 @@ impl Tile {
 impl World {
     pub fn new(item_database: Arc<ItemDatabase>) -> World {
         World {
-            name: String::new(),
+            name: "EXIT".to_string(),
             width: 0,
             height: 0,
             tile_count: 0,
