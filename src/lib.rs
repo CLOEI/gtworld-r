@@ -424,6 +424,15 @@ impl World {
         self.current_weather = 0;
     }
 
+    pub fn get_tile(&mut self, x: u32, y: u32) -> Option<&mut Tile> {
+        if x >= self.width || y >= self.height {
+            return None;
+        }
+
+        let index = (y * self.width + x) as usize;
+        self.tiles.get_mut(index)
+    }
+
     pub fn parse(&mut self, data: &[u8]) {
         self.reset();
         let mut data = Cursor::new(data);
