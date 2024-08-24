@@ -424,13 +424,22 @@ impl World {
         self.current_weather = 0;
     }
 
-    pub fn get_tile(&mut self, x: u32, y: u32) -> Option<&mut Tile> {
+    pub fn get_tile_mut(&mut self, x: u32, y: u32) -> Option<&mut Tile> {
         if x >= self.width || y >= self.height {
             return None;
         }
 
         let index = (y * self.width + x) as usize;
         self.tiles.get_mut(index)
+    }
+
+    pub fn get_tile(&self, x: u32, y: u32) -> Option<&Tile> {
+        if x >= self.width || y >= self.height {
+            return None;
+        }
+
+        let index = (y * self.width + x) as usize;
+        self.tiles.get(index)
     }
 
     pub fn parse(&mut self, data: &[u8]) {
