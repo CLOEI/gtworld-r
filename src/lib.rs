@@ -16,7 +16,7 @@ pub struct World {
     pub item_database: Arc<ItemDatabase>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Tile {
     pub foreground_item_id: u16,
     pub background_item_id: u16,
@@ -25,7 +25,7 @@ pub struct Tile {
     pub tile_type: TileType,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TileType {
     Basic,
     Door {
@@ -326,13 +326,13 @@ pub enum TileType {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FishInfo {
     pub fish_item_id: u32,
     pub lbs: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SilkWormColor {
     pub a: u8,
     pub r: u8,
@@ -340,32 +340,32 @@ pub struct SilkWormColor {
     pub b: u8,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StorageBlockItemInfo {
     pub id: u32,
     pub amount: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CookingOvenIngredientInfo {
     pub item_id: u32,
     pub time_added: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CyBotCommandData {
     pub command_id: u32,
     pub is_command_used: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Dropped {
     pub items_count: u32,
     pub last_dropped_item_uid: u32,
     pub items: Vec<DroppedItem>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DroppedItem {
     pub id: u16,
     pub x: f32,
