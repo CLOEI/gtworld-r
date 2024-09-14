@@ -46,6 +46,7 @@ pub enum TileType {
     Seed {
         time_passed: u32,
         item_on_tree: u8,
+        ready_to_harvest: bool,
     },
     Mailbox {
         unknown_1: String,
@@ -469,7 +470,7 @@ impl World {
 
             if (tile.flags & 0x1) != 0 {
                 let extra_tile_type = data.read_u8().unwrap();
-                self.get_extra_tile_data(&mut tile, &mut data, extra_tile_type);
+                self.get_extra_tile_data(&mut tile, &mut data, extra_tile_type, &self.item_database);
             }
 
             if (tile.flags & 0x2) != 0 {
@@ -504,7 +505,7 @@ impl World {
         self.current_weather = data.read_u16::<LittleEndian>().unwrap();
     }
 
-    fn get_extra_tile_data(&self, tile: &mut Tile, data: &mut Cursor<&[u8]>, item_type: u8) {
+    fn get_extra_tile_data(&self, tile: &mut Tile, data: &mut Cursor<&[u8]>, item_type: u8, item_database: &Arc<ItemDatabase>) {
         match item_type {
             1 => {
                 // TileType::Door
@@ -564,10 +565,19 @@ impl World {
                 // TileType::Seed
                 let time_passed = data.read_u32::<LittleEndian>().unwrap();
                 let item_on_tree = data.read_u8().unwrap();
+                let ready_to_harvest = {
+                    let item = item_database.get_item(&(tile.foreground_item_id as u32)).unwrap();
+                    if item.grow_time <= time_passed {
+                        true
+                    } else {
+                        false
+                    }
+                };
 
                 tile.tile_type = TileType::Seed {
                     time_passed,
                     item_on_tree,
+                    ready_to_harvest,
                 };
             }
             6 => {
