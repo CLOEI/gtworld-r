@@ -444,23 +444,29 @@ impl World {
         self.tiles.get(index)
     }
 
-    pub fn is_harvestable(&self, x: u32, y: u32) -> bool {
-        if let Some(tile) = self.get_tile(x, y) {
-            if let TileType::Seed { ready_to_harvest, timer, .. } = &tile.tile_type {
-                if *ready_to_harvest {
-                    return true;
+    pub fn is_tile_harvestable(&self, tile: &Tile) -> bool {
+        match tile.tile_type {
+            TileType::Seed { ready_to_harvest, timer, time_passed, .. } => {
+                if ready_to_harvest {
+                    true
                 } else {
                     let item = self.item_database.get_item(&(tile.foreground_item_id as u32)).unwrap();
                     let elapsed = timer.elapsed().as_secs();
-                    if elapsed >= item.grow_time as u64 {
-                        return true;
+                    if (elapsed + time_passed as u64) >= item.grow_time as u64 {
+                        true
                     } else {
-                        return false;
+                        false
                     }
                 }
             }
+            _ => false,
         }
+    }
 
+    pub fn is_harvestable(&self, x: u32, y: u32) -> bool {
+        if let Some(tile) = self.get_tile(x, y) {
+            return self.is_tile_harvestable(tile)
+        }
         false
     }
 
