@@ -1,7 +1,7 @@
 use gtitem_r::structs::ItemDatabase;
 use std::io::{Cursor, Read};
 use std::sync::Arc;
-
+use std::time::Instant;
 use byteorder::{LittleEndian, ReadBytesExt};
 
 pub struct World {
@@ -47,6 +47,7 @@ pub enum TileType {
         time_passed: u32,
         item_on_tree: u8,
         ready_to_harvest: bool,
+        timer: Instant,
     },
     Mailbox {
         unknown_1: String,
@@ -443,6 +444,26 @@ impl World {
         self.tiles.get(index)
     }
 
+    pub fn is_harvestable(&self, x: u32, y: u32) -> bool {
+        if let Some(tile) = self.get_tile(x, y) {
+            if let TileType::Seed { ready_to_harvest, timer, .. } = &tile.tile_type {
+                if *ready_to_harvest {
+                    return true;
+                } else {
+                    let item = self.item_database.get_item(&(tile.foreground_item_id as u32)).unwrap();
+                    let elapsed = timer.elapsed().as_secs();
+                    if elapsed >= item.grow_time as u64 {
+                        return true;
+                    } else {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
     pub fn parse(&mut self, data: &[u8]) {
         self.reset();
         let mut data = Cursor::new(data);
@@ -573,11 +594,13 @@ impl World {
                         false
                     }
                 };
+                let timer = Instant::now();
 
                 tile.tile_type = TileType::Seed {
                     time_passed,
                     item_on_tree,
                     ready_to_harvest,
+                    timer,
                 };
             }
             6 => {
