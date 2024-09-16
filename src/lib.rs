@@ -23,6 +23,8 @@ pub struct Tile {
     pub parent_block_index: u16,
     pub flags: u16,
     pub tile_type: TileType,
+    pub x: u32,
+    pub y: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -383,6 +385,8 @@ impl Tile {
         background_item_id: u16,
         parent_block_index: u16,
         flags: u16,
+        x: u32,
+        y: u32,
     ) -> Tile {
         Tile {
             foreground_item_id,
@@ -390,6 +394,8 @@ impl Tile {
             parent_block_index,
             flags,
             tile_type: TileType::Basic,
+            x,
+            y
         }
     }
 }
@@ -488,8 +494,10 @@ impl World {
         self.tile_count = tile_count;
 
         // tiles
-        for _ in 0..tile_count {
-            let mut tile = Tile::new(0, 0, 0, 0);
+        for count in 0..tile_count {
+            let x = (count) % self.width;
+            let y = (count) / self.width;
+            let mut tile = Tile::new(0, 0, 0, 0, x, y);
             tile.foreground_item_id = data.read_u16::<LittleEndian>().unwrap();
             tile.background_item_id = data.read_u16::<LittleEndian>().unwrap();
             tile.parent_block_index = data.read_u16::<LittleEndian>().unwrap();
