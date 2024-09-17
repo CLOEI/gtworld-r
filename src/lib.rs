@@ -395,7 +395,7 @@ impl Tile {
             flags,
             tile_type: TileType::Basic,
             x,
-            y
+            y,
         }
     }
 }
@@ -471,9 +471,32 @@ impl World {
 
     pub fn is_harvestable(&self, x: u32, y: u32) -> bool {
         if let Some(tile) = self.get_tile(x, y) {
-            return self.is_tile_harvestable(tile)
+            return self.is_tile_harvestable(tile);
         }
         false
+    }
+
+    pub fn update_tile(&mut self, mut tile: Tile, mut data: &mut Cursor<&[u8]>, replace: bool) {
+        tile.foreground_item_id = data.read_u16::<LittleEndian>().unwrap();
+        tile.background_item_id = data.read_u16::<LittleEndian>().unwrap();
+        tile.parent_block_index = data.read_u16::<LittleEndian>().unwrap();
+        tile.flags = data.read_u16::<LittleEndian>().unwrap();
+
+        if (tile.flags & 0x1) != 0 {
+            let extra_tile_type = data.read_u8().unwrap();
+            self.get_extra_tile_data(&mut tile, &mut data, extra_tile_type, &self.item_database);
+        }
+
+        if (tile.flags & 0x2) != 0 {
+            data.read_u16::<LittleEndian>().unwrap();
+        }
+
+        if replace {
+            let index = (tile.y * self.width + tile.x) as usize;
+            self.tiles[index] = tile;
+        } else {
+            self.tiles.push(tile);
+        }
     }
 
     pub fn parse(&mut self, data: &[u8]) {
@@ -497,22 +520,8 @@ impl World {
         for count in 0..tile_count {
             let x = (count) % self.width;
             let y = (count) / self.width;
-            let mut tile = Tile::new(0, 0, 0, 0, x, y);
-            tile.foreground_item_id = data.read_u16::<LittleEndian>().unwrap();
-            tile.background_item_id = data.read_u16::<LittleEndian>().unwrap();
-            tile.parent_block_index = data.read_u16::<LittleEndian>().unwrap();
-            tile.flags = data.read_u16::<LittleEndian>().unwrap();
-
-            if (tile.flags & 0x1) != 0 {
-                let extra_tile_type = data.read_u8().unwrap();
-                self.get_extra_tile_data(&mut tile, &mut data, extra_tile_type, &self.item_database);
-            }
-
-            if (tile.flags & 0x2) != 0 {
-                data.read_u16::<LittleEndian>().unwrap();
-            }
-
-            self.tiles.push(tile);
+            let tile = Tile::new(0, 0, 0, 0, x, y);
+            self.update_tile(tile, &mut data, false);
         }
 
         data.set_position(data.position() + 12); // it exist in the binary, i don't know what it is
