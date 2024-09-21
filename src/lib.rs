@@ -581,9 +581,9 @@ impl World {
                     access_uids.push(data.read_u32::<LittleEndian>().unwrap());
                 }
                 let minimum_level = if tile.foreground_item_id != 202
-                    && tile.foreground_item_id != 204
-                    && tile.foreground_item_id != 206
-                    && tile.foreground_item_id != 4994
+                    || tile.foreground_item_id != 204
+                    || tile.foreground_item_id != 206
+                    || tile.foreground_item_id != 4994
                 {
                     data.read_u8().unwrap()
                 } else {
