@@ -43,7 +43,6 @@ pub enum TileType {
         access_count: u32,
         access_uids: Vec<u32>,
         minimum_level: u8,
-        unknown_1: [u8; 7],
     },
     Seed {
         time_passed: u32,
@@ -583,8 +582,9 @@ impl World {
                 let non_world_locks = [202, 204, 206, 4994];
                 let minimum_level = if !non_world_locks.contains(&tile.foreground_item_id) {
                     let mut unknown_1 = [0; 7];
+                    let minimum_level = data.read_u8().unwrap();
                     data.read_exact(&mut unknown_1).unwrap();
-                    data.read_u8().unwrap()
+                    minimum_level
                 } else { 0 };
 
                 if tile.foreground_item_id == 5814 {
@@ -597,7 +597,6 @@ impl World {
                     access_count,
                     access_uids,
                     minimum_level,
-                    unknown_1,
                 };
             }
             4 => {
