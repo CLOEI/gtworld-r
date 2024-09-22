@@ -580,17 +580,12 @@ impl World {
                 for _ in 0..access_count {
                     access_uids.push(data.read_u32::<LittleEndian>().unwrap());
                 }
-                let minimum_level = if tile.foreground_item_id != 202
-                    || tile.foreground_item_id != 204
-                    || tile.foreground_item_id != 206
-                    || tile.foreground_item_id != 4994
-                {
+                let non_world_locks = [202, 204, 206, 4994];
+                let minimum_level = if !non_world_locks.contains(&tile.foreground_item_id) {
+                    let mut unknown_1 = [0; 7];
+                    data.read_exact(&mut unknown_1).unwrap();
                     data.read_u8().unwrap()
-                } else {
-                    0
-                };
-                let mut unknown_1 = [0; 7];
-                data.read_exact(&mut unknown_1).unwrap();
+                } else { 0 };
 
                 if tile.foreground_item_id == 5814 {
                     data.set_position(data.position() + 16);
