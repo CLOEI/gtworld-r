@@ -14,6 +14,7 @@ pub struct World {
     pub base_weather: u16,
     pub current_weather: u16,
     pub item_database: Arc<ItemDatabase>,
+    pub is_error: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -414,6 +415,7 @@ impl World {
             },
             base_weather: 0,
             current_weather: 0,
+            is_error: false,
             item_database,
         }
     }
@@ -481,13 +483,20 @@ impl World {
         tile.parent_block_index = data.read_u16::<LittleEndian>().unwrap();
         tile.flags = data.read_u16::<LittleEndian>().unwrap();
 
-        if (tile.flags & 0x1) != 0 {
-            let extra_tile_type = data.read_u8().unwrap();
-            self.get_extra_tile_data(&mut tile, &mut data, extra_tile_type, &self.item_database);
+        if tile.foreground_item_id > self.item_database.item_count as u16 || tile.background_item_id > self.item_database.item_count as u16 {
+            self.is_error = true;
+            let new_tile = Tile::new(0, 0, 0, 0, tile.x, tile.y);
+            self.tiles.push(new_tile);
+            return;
         }
 
         if (tile.flags & 0x2) != 0 {
             data.read_u16::<LittleEndian>().unwrap();
+        }
+
+        if (tile.flags & 0x1) != 0 {
+            let extra_tile_type = data.read_u8().unwrap();
+            self.get_extra_tile_data(&mut tile, &mut data, extra_tile_type, &self.item_database);
         }
 
         if replace {
