@@ -528,6 +528,10 @@ impl World {
         for count in 0..tile_count {
             let x = (count) % self.width;
             let y = (count) / self.width;
+            if x == 51 && y == 43 {
+                let position = data.position();
+                println!("{}", position);
+            }
             let tile = Tile::new(0, 0, 0, 0, x, y);
             self.update_tile(tile, &mut data, false);
         }
@@ -588,13 +592,9 @@ impl World {
                 for _ in 0..access_count {
                     access_uids.push(data.read_u32::<LittleEndian>().unwrap());
                 }
-                let non_world_locks = [202, 204, 206, 4994];
-                let minimum_level = if !non_world_locks.contains(&tile.foreground_item_id) {
-                    let mut unknown_1 = [0; 7];
-                    let minimum_level = data.read_u8().unwrap();
-                    data.read_exact(&mut unknown_1).unwrap();
-                    minimum_level
-                } else { 0 };
+                let minimum_level = data.read_u8().unwrap();
+                let mut unknown_1 = [0; 7];
+                data.read_exact(&mut unknown_1).unwrap();
 
                 if tile.foreground_item_id == 5814 {
                     data.set_position(data.position() + 16);
