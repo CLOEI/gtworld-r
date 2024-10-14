@@ -1,6 +1,6 @@
 use gtitem_r::structs::ItemDatabase;
 use std::io::{Cursor, Read};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use byteorder::{LittleEndian, ReadBytesExt};
 
@@ -13,7 +13,7 @@ pub struct World {
     pub dropped: Dropped,
     pub base_weather: u16,
     pub current_weather: u16,
-    pub item_database: Arc<ItemDatabase>,
+    pub item_database: Arc<RwLock<ItemDatabase>>,
     pub is_error: bool,
 }
 
@@ -401,7 +401,7 @@ impl Tile {
 }
 
 impl World {
-    pub fn new(item_database: Arc<ItemDatabase>) -> World {
+    pub fn new(item_database: Arc<RwLock<ItemDatabase>>) -> World {
         World {
             name: "EXIT".to_string(),
             width: 0,
@@ -457,7 +457,8 @@ impl World {
                 if ready_to_harvest {
                     true
                 } else {
-                    let item = self.item_database.get_item(&(tile.foreground_item_id as u32)).unwrap();
+                    let item_database = self.item_database.read().unwrap();
+                    let item = item_database.get_item(&(tile.foreground_item_id as u32)).unwrap();
                     let elapsed = timer.elapsed().as_secs();
                     if (elapsed + time_passed as u64) >= item.grow_time as u64 {
                         true
@@ -483,7 +484,11 @@ impl World {
         tile.parent_block_index = data.read_u16::<LittleEndian>().unwrap();
         tile.flags = data.read_u16::<LittleEndian>().unwrap();
 
-        if tile.foreground_item_id > self.item_database.item_count as u16 || tile.background_item_id > self.item_database.item_count as u16 {
+        let item_count = {
+            let item_database = self.item_database.read().unwrap();
+            item_database.item_count
+        };
+        if tile.foreground_item_id > item_count as u16 || tile.background_item_id > item_count as u16 {
             self.is_error = true;
             let new_tile = Tile::new(0, 0, 0, 0, tile.x, tile.y);
             self.tiles.push(new_tile);
@@ -561,7 +566,7 @@ impl World {
         self.current_weather = data.read_u16::<LittleEndian>().unwrap();
     }
 
-    fn get_extra_tile_data(&self, tile: &mut Tile, data: &mut Cursor<&[u8]>, item_type: u8, item_database: &Arc<ItemDatabase>) {
+    fn get_extra_tile_data(&self, tile: &mut Tile, data: &mut Cursor<&[u8]>, item_type: u8, item_database: &Arc<RwLock<ItemDatabase>>) {
         match item_type {
             1 => {
                 // TileType::Door
@@ -613,6 +618,7 @@ impl World {
                 let time_passed = data.read_u32::<LittleEndian>().unwrap();
                 let item_on_tree = data.read_u8().unwrap();
                 let ready_to_harvest = {
+                    let item_database = item_database.read().unwrap();
                     let item = item_database.get_item(&(tile.foreground_item_id as u32)).unwrap();
                     if item.grow_time <= time_passed {
                         true
@@ -1384,7 +1390,7 @@ fn test_render_world() {
     use image::{ImageBuffer, Rgba};
     use std::fs::File;
 
-    let item_database = Arc::new(load_from_file("items.dat").unwrap());
+    let item_database = Arc::new(RwLock::new(load_from_file("items.dat").unwrap()));
     let mut world = World::new(item_database);
     // get byte from world.dat file
     let mut file = File::open("world.dat").unwrap();
@@ -1401,8 +1407,8 @@ fn test_render_world() {
         for y in 0..world.height {
             // get current tile
             let tile = &world.tiles[(y * world.width + x) as usize];
-            let item = world
-                .item_database
+            let item_database = world.item_database.read().unwrap();
+            let item = item_database
                 .get_item(&(tile.foreground_item_id as u32))
                 .unwrap();
             let mut color = Rgba([0, 0, 0, 255]);
