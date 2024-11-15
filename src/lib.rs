@@ -1,8 +1,8 @@
+use byteorder::{LittleEndian, ReadBytesExt};
 use gtitem_r::structs::ItemDatabase;
 use std::io::{Cursor, Read};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
-use byteorder::{LittleEndian, ReadBytesExt};
 
 pub struct World {
     pub name: String,
@@ -22,10 +22,106 @@ pub struct Tile {
     pub foreground_item_id: u16,
     pub background_item_id: u16,
     pub parent_block_index: u16,
-    pub flags: u16,
+    pub flags: TileFlags,
     pub tile_type: TileType,
     pub x: u32,
     pub y: u32,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct TileFlags {
+    pub has_extra_data: bool,
+    pub has_parent: bool,
+    pub was_spliced: bool,
+    pub will_spawn_seeds_too: bool,
+    pub is_seedling: bool,
+    pub flipped_x: bool,
+    pub is_on: bool,
+    pub is_open_to_public: bool,
+    pub bg_is_on: bool,
+    pub fg_alt_mode: bool,
+    pub is_wet: bool,
+    pub glued: bool,
+    pub on_fire: bool,
+    pub painted_red: bool,
+    pub painted_green: bool,
+    pub painted_blue: bool,
+}
+
+impl TileFlags {
+    pub fn from_u16(value: u16) -> Self {
+        Self {
+            has_extra_data: value & 0x01 != 0,
+            has_parent: value & 0x02 != 0,
+            was_spliced: value & 0x04 != 0,
+            will_spawn_seeds_too: value & 0x08 != 0,
+            is_seedling: value & 0x10 != 0,
+            flipped_x: value & 0x20 != 0,
+            is_on: value & 0x40 != 0,
+            is_open_to_public: value & 0x80 != 0,
+            bg_is_on: value & 0x100 != 0,
+            fg_alt_mode: value & 0x200 != 0,
+            is_wet: value & 0x400 != 0,
+            glued: value & 0x800 != 0,
+            on_fire: value & 0x1000 != 0,
+            painted_red: value & 0x2000 != 0,
+            painted_green: value & 0x4000 != 0,
+            painted_blue: value & 0x8000 != 0,
+        }
+    }
+
+    pub fn to_u16(&self) -> u16 {
+        let mut value = 0;
+        if self.has_extra_data {
+            value |= 0x01;
+        }
+        if self.has_parent {
+            value |= 0x02;
+        }
+        if self.was_spliced {
+            value |= 0x04;
+        }
+        if self.will_spawn_seeds_too {
+            value |= 0x08;
+        }
+        if self.is_seedling {
+            value |= 0x10;
+        }
+        if self.flipped_x {
+            value |= 0x20;
+        }
+        if self.is_on {
+            value |= 0x40;
+        }
+        if self.is_open_to_public {
+            value |= 0x80;
+        }
+        if self.bg_is_on {
+            value |= 0x100;
+        }
+        if self.fg_alt_mode {
+            value |= 0x200;
+        }
+        if self.is_wet {
+            value |= 0x400;
+        }
+        if self.glued {
+            value |= 0x800;
+        }
+        if self.on_fire {
+            value |= 0x1000;
+        }
+        if self.painted_red {
+            value |= 0x2000;
+        }
+        if self.painted_green {
+            value |= 0x4000;
+        }
+        if self.painted_blue {
+            value |= 0x8000;
+        }
+        value
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -384,7 +480,7 @@ impl Tile {
         foreground_item_id: u16,
         background_item_id: u16,
         parent_block_index: u16,
-        flags: u16,
+        flags: TileFlags,
         x: u32,
         y: u32,
     ) -> Tile {
@@ -453,12 +549,19 @@ impl World {
 
     pub fn is_tile_harvestable(&self, tile: &Tile) -> bool {
         match tile.tile_type {
-            TileType::Seed { ready_to_harvest, timer, time_passed, .. } => {
+            TileType::Seed {
+                ready_to_harvest,
+                timer,
+                time_passed,
+                ..
+            } => {
                 if ready_to_harvest {
                     true
                 } else {
                     let item_database = self.item_database.read().unwrap();
-                    let item = item_database.get_item(&(tile.foreground_item_id as u32)).unwrap();
+                    let item = item_database
+                        .get_item(&(tile.foreground_item_id as u32))
+                        .unwrap();
                     let elapsed = timer.elapsed().as_secs();
                     if (elapsed + time_passed as u64) >= item.grow_time as u64 {
                         true
@@ -482,24 +585,26 @@ impl World {
         tile.foreground_item_id = data.read_u16::<LittleEndian>().unwrap();
         tile.background_item_id = data.read_u16::<LittleEndian>().unwrap();
         tile.parent_block_index = data.read_u16::<LittleEndian>().unwrap();
-        tile.flags = data.read_u16::<LittleEndian>().unwrap();
+        tile.flags = TileFlags::from_u16(data.read_u16::<LittleEndian>().unwrap());
 
         let item_count = {
             let item_database = self.item_database.read().unwrap();
             item_database.item_count
         };
-        if tile.foreground_item_id > item_count as u16 || tile.background_item_id > item_count as u16 {
+        if tile.foreground_item_id > item_count as u16
+            || tile.background_item_id > item_count as u16
+        {
             self.is_error = true;
-            let new_tile = Tile::new(0, 0, 0, 0, tile.x, tile.y);
+            let new_tile = Tile::new(0, 0, 0, tile.flags, tile.x, tile.y);
             self.tiles.push(new_tile);
             return;
         }
 
-        if (tile.flags & 0x2) != 0 {
+        if tile.flags.has_parent {
             data.read_u16::<LittleEndian>().unwrap();
         }
 
-        if (tile.flags & 0x1) != 0 {
+        if tile.flags.has_extra_data {
             let extra_tile_type = data.read_u8().unwrap();
             self.get_extra_tile_data(&mut tile, &mut data, extra_tile_type, &self.item_database);
         }
@@ -537,7 +642,7 @@ impl World {
                 let position = data.position();
                 println!("{}", position);
             }
-            let tile = Tile::new(0, 0, 0, 0, x, y);
+            let tile = Tile::new(0, 0, 0, TileFlags::default(), x, y);
             self.update_tile(tile, &mut data, false);
         }
 
@@ -566,7 +671,13 @@ impl World {
         self.current_weather = data.read_u16::<LittleEndian>().unwrap();
     }
 
-    fn get_extra_tile_data(&self, tile: &mut Tile, data: &mut Cursor<&[u8]>, item_type: u8, item_database: &Arc<RwLock<ItemDatabase>>) {
+    fn get_extra_tile_data(
+        &self,
+        tile: &mut Tile,
+        data: &mut Cursor<&[u8]>,
+        item_type: u8,
+        item_database: &Arc<RwLock<ItemDatabase>>,
+    ) {
         match item_type {
             1 => {
                 // TileType::Door
@@ -619,7 +730,9 @@ impl World {
                 let item_on_tree = data.read_u8().unwrap();
                 let ready_to_harvest = {
                     let item_database = item_database.read().unwrap();
-                    let item = item_database.get_item(&(tile.foreground_item_id as u32)).unwrap();
+                    let item = item_database
+                        .get_item(&(tile.foreground_item_id as u32))
+                        .unwrap();
                     if item.grow_time <= time_passed {
                         true
                     } else {
