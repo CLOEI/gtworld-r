@@ -11,8 +11,8 @@ pub struct World {
     pub tile_count: u32,
     pub tiles: Vec<Tile>,
     pub dropped: Dropped,
-    pub base_weather: u16,
-    pub current_weather: u16,
+    pub base_weather: WeatherType,
+    pub current_weather: WeatherType,
     pub item_database: Arc<RwLock<ItemDatabase>>,
     pub is_error: bool,
 }
@@ -121,6 +121,176 @@ impl TileFlags {
             value |= 0x8000;
         }
         value
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum WeatherType {
+    Default,
+    Sunset,
+    Night,
+    Desert,
+    Sunny,
+    RainyCity,
+    Harvest,
+    Mars,
+    Spooky,
+    Maw,
+    Blank,
+    Snowy,
+    Growch,
+    GrowchHappy,
+    Undersea,
+    Warp,
+    Comet,
+    Comet2,
+    Party,
+    Pineapple,
+    SnowyNight,
+    Spring,
+    Wolf,
+    NotInitialized,
+    PurpleHaze,
+    FireHaze,
+    GreenHaze,
+    AquaHaze,
+    CustomHaze,
+    CustomItems,
+    Pagoda,
+    Apocalypse,
+    Jungle,
+    BalloonWarz,
+    Background,
+    Autumn,
+    Hearth,
+    StPatricks,
+    IceAge,
+    Volcano,
+    FloatingIslands,
+    Mascot,
+    DigitalRain,
+    MonoChrome,
+    Treasure,
+    Surgery,
+    Bountiful,
+    Meteor,
+    Stars,
+    Ascended,
+    Destroyed,
+    GrowtopiaSign,
+    Dungeon,
+    LegendaryCity,
+    BloodDragon,
+    PopCity,
+    Anzu,
+    TmntCity,
+    RadCity,
+    Plaze,
+    Nebula,
+    ProtoStar,
+    DarkMountains,
+    Ac15,
+    MountGrowMore,
+    CrackInReality,
+    LnyNian,
+    RaymanLock,
+    Steampunk,
+    RealmOfSpirits,
+    Blackhole,
+    Gems,
+    HolidayHaven,
+    FenyxLock,
+    EnchantedLock,
+    RoyalEnchantedLock,
+    NeptunesAtlantis,
+    PinuskiPetalPerfectHaven,
+    Candyland,
+}
+
+impl From<u16> for WeatherType {
+    fn from(value: u16) -> Self {
+        match value {
+            0 => WeatherType::Default,
+            1 => WeatherType::Sunset,
+            2 => WeatherType::Night,
+            3 => WeatherType::Desert,
+            4 => WeatherType::Sunny,
+            5 => WeatherType::RainyCity,
+            6 => WeatherType::Harvest,
+            7 => WeatherType::Mars,
+            8 => WeatherType::Spooky,
+            9 => WeatherType::Maw,
+            10 => WeatherType::Blank,
+            11 => WeatherType::Snowy,
+            12 => WeatherType::Growch,
+            13 => WeatherType::GrowchHappy,
+            14 => WeatherType::Undersea,
+            15 => WeatherType::Warp,
+            16 => WeatherType::Comet,
+            17 => WeatherType::Comet2,
+            18 => WeatherType::Party,
+            19 => WeatherType::Pineapple,
+            20 => WeatherType::SnowyNight,
+            21 => WeatherType::Spring,
+            22 => WeatherType::Wolf,
+            23 => WeatherType::NotInitialized,
+            24 => WeatherType::PurpleHaze,
+            25 => WeatherType::FireHaze,
+            26 => WeatherType::GreenHaze,
+            27 => WeatherType::AquaHaze,
+            28 => WeatherType::CustomHaze,
+            29 => WeatherType::CustomItems,
+            30 => WeatherType::Pagoda,
+            31 => WeatherType::Apocalypse,
+            32 => WeatherType::Jungle,
+            33 => WeatherType::BalloonWarz,
+            34 => WeatherType::Background,
+            35 => WeatherType::Autumn,
+            36 => WeatherType::Hearth,
+            37 => WeatherType::StPatricks,
+            38 => WeatherType::IceAge,
+            39 => WeatherType::Volcano,
+            40 => WeatherType::FloatingIslands,
+            41 => WeatherType::Mascot,
+            42 => WeatherType::DigitalRain,
+            43 => WeatherType::MonoChrome,
+            44 => WeatherType::Treasure,
+            45 => WeatherType::Surgery,
+            46 => WeatherType::Bountiful,
+            47 => WeatherType::Meteor,
+            48 => WeatherType::Stars,
+            49 => WeatherType::Ascended,
+            50 => WeatherType::Destroyed,
+            51 => WeatherType::GrowtopiaSign,
+            52 => WeatherType::Dungeon,
+            53 => WeatherType::LegendaryCity,
+            54 => WeatherType::BloodDragon,
+            55 => WeatherType::PopCity,
+            56 => WeatherType::Anzu,
+            57 => WeatherType::TmntCity,
+            58 => WeatherType::RadCity,
+            59 => WeatherType::Plaze,
+            60 => WeatherType::Nebula,
+            61 => WeatherType::ProtoStar,
+            62 => WeatherType::DarkMountains,
+            63 => WeatherType::Ac15,
+            64 => WeatherType::MountGrowMore,
+            65 => WeatherType::CrackInReality,
+            66 => WeatherType::LnyNian,
+            67 => WeatherType::RaymanLock,
+            68 => WeatherType::Steampunk,
+            69 => WeatherType::RealmOfSpirits,
+            70 => WeatherType::Blackhole,
+            71 => WeatherType::Gems,
+            72 => WeatherType::HolidayHaven,
+            73 => WeatherType::FenyxLock,
+            74 => WeatherType::EnchantedLock,
+            75 => WeatherType::RoyalEnchantedLock,
+            76 => WeatherType::NeptunesAtlantis,
+            77 => WeatherType::PinuskiPetalPerfectHaven,
+            78 => WeatherType::Candyland,
+            _ => WeatherType::Default,
+        }
     }
 }
 
@@ -509,8 +679,8 @@ impl World {
                 last_dropped_item_uid: 0,
                 items: Vec::new(),
             },
-            base_weather: 0,
-            current_weather: 0,
+            base_weather: WeatherType::Default,
+            current_weather: WeatherType::Default,
             is_error: false,
             item_database,
         }
@@ -525,8 +695,8 @@ impl World {
         self.dropped.items_count = 0;
         self.dropped.last_dropped_item_uid = 0;
         self.dropped.items.clear();
-        self.base_weather = 0;
-        self.current_weather = 0;
+        self.base_weather = WeatherType::Default;
+        self.current_weather = WeatherType::Default;
     }
 
     pub fn get_tile_mut(&mut self, x: u32, y: u32) -> Option<&mut Tile> {
@@ -638,10 +808,6 @@ impl World {
         for count in 0..tile_count {
             let x = (count) % self.width;
             let y = (count) / self.width;
-            if x == 51 && y == 43 {
-                let position = data.position();
-                println!("{}", position);
-            }
             let tile = Tile::new(0, 0, 0, TileFlags::default(), x, y);
             self.update_tile(tile, &mut data, false);
         }
@@ -666,9 +832,11 @@ impl World {
             });
         }
 
-        self.base_weather = data.read_u16::<LittleEndian>().unwrap();
+        let base_weather = data.read_u16::<LittleEndian>().unwrap();
         data.read_u16::<LittleEndian>().unwrap(); // unknown
-        self.current_weather = data.read_u16::<LittleEndian>().unwrap();
+        let current_weather = data.read_u16::<LittleEndian>().unwrap();
+        self.base_weather = WeatherType::from(base_weather);
+        self.current_weather = WeatherType::from(current_weather);
     }
 
     fn get_extra_tile_data(
@@ -1521,37 +1689,45 @@ fn test_render_world() {
             // get current tile
             let tile = &world.tiles[(y * world.width + x) as usize];
             let item_database = world.item_database.read().unwrap();
-            let item = item_database
-                .get_item(&(tile.foreground_item_id as u32))
-                .unwrap();
+            let item = {
+                let item = item_database
+                    .get_item(&(tile.foreground_item_id as u32))
+                    .unwrap();
+                item
+            };
+
             let mut color = Rgba([0, 0, 0, 255]);
             if item.name == "Blank" {
-                color = Rgba([0, 0, 255, 255]);
-            } else if !item.name.contains("Seed") {
-                color = Rgba([139, 69, 19, 255])
-            }
-            if item.name.contains("Seed") {
-                color = Rgba([0, 255, 0, 255])
-            }
-            if item.name.contains("Door") {
-                color = Rgba([255, 255, 255, 255])
-            }
-            if item.name.contains("Rock") {
-                color = Rgba([128, 128, 128, 255])
-            }
-            if item.name.contains("Lava") {
-                color = Rgba([255, 0, 0, 255])
-            }
-            if item.name.contains("Bedrock") {
-                color = Rgba([0, 0, 0, 255])
-            }
-            if item.name.contains("Lock") {
-                // yellow
-                color = Rgba([255, 255, 0, 255])
-            }
-            if item.name.contains("Sign") {
-                // orange
-                color = Rgba([255, 165, 0, 255])
+                color = Rgba([96, 215, 242, 255]);
+                if tile.background_item_id != 0 {
+                    let item = {
+                        let item = item_database
+                            .get_item(&(tile.background_item_id as u32 + 1))
+                            .unwrap();
+                        item
+                    };
+
+                    let colors = item.base_color;
+                    let r = ((colors >> 24) & 0xFF) as u8;
+                    let g = ((colors >> 16) & 0xFF) as u8;
+                    let b = ((colors >> 8) & 0xFF) as u8;
+
+                    color = Rgba([b, g, r, 255]);
+                }
+            } else {
+                let item = {
+                    let item = item_database
+                        .get_item(&(tile.foreground_item_id as u32 + 1))
+                        .unwrap();
+                    item
+                };
+
+                let colors = item.base_color;
+                let r = ((colors >> 24) & 0xFF) as u8;
+                let g = ((colors >> 16) & 0xFF) as u8;
+                let b = ((colors >> 8) & 0xFF) as u8;
+
+                color = Rgba([b, g, r, 255]);
             }
 
             for px in 0..item_pixel_size {
