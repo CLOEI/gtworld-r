@@ -751,7 +751,7 @@ impl World {
         false
     }
 
-    pub fn update_tile(&mut self, mut tile: Tile, mut data: &mut Cursor<&[u8]>, replace: bool) {
+    pub fn update_tile(&mut self, mut tile: Tile, mut data: &mut Cursor<&[u8]>, replace: bool) -> Option<()> {
         tile.foreground_item_id = data.read_u16::<LittleEndian>().unwrap();
         tile.background_item_id = data.read_u16::<LittleEndian>().unwrap();
         tile.parent_block_index = data.read_u16::<LittleEndian>().unwrap();
@@ -767,7 +767,7 @@ impl World {
             self.is_error = true;
             let new_tile = Tile::new(0, 0, 0, tile.flags, tile.x, tile.y);
             self.tiles.push(new_tile);
-            return;
+            return None;
         }
 
         if tile.flags.has_parent {
@@ -785,6 +785,8 @@ impl World {
         } else {
             self.tiles.push(tile);
         }
+
+        Some(())
     }
 
     pub fn parse(&mut self, data: &[u8]) {
@@ -809,7 +811,16 @@ impl World {
             let x = (count) % self.width;
             let y = (count) / self.width;
             let tile = Tile::new(0, 0, 0, TileFlags::default(), x, y);
-            self.update_tile(tile, &mut data, false);
+            match self.update_tile(tile, &mut data, false) {
+                Some(_) => {}
+                None => {
+                    break;
+                }
+            }
+        }
+
+        if self.is_error {
+            return;
         }
 
         data.set_position(data.position() + 12); // it exist in the binary, i don't know what it is
@@ -1686,55 +1697,67 @@ fn test_render_world() {
 
     for x in 0..world.width {
         for y in 0..world.height {
-            // get current tile
-            let tile = &world.tiles[(y * world.width + x) as usize];
-            let item_database = world.item_database.read().unwrap();
-            let item = {
-                let item = item_database
-                    .get_item(&(tile.foreground_item_id as u32))
-                    .unwrap();
-                item
-            };
-
-            let mut color = Rgba([0, 0, 0, 255]);
-            if item.name == "Blank" {
-                color = Rgba([96, 215, 242, 255]);
-                if tile.background_item_id != 0 {
+            match &world.get_tile(x, y) {
+                Some(tile) => {
+                    let item_database = world.item_database.read().unwrap();
                     let item = {
                         let item = item_database
-                            .get_item(&(tile.background_item_id as u32 + 1))
+                            .get_item(&(tile.foreground_item_id as u32))
                             .unwrap();
                         item
                     };
 
-                    let colors = item.base_color;
-                    let r = ((colors >> 24) & 0xFF) as u8;
-                    let g = ((colors >> 16) & 0xFF) as u8;
-                    let b = ((colors >> 8) & 0xFF) as u8;
+                    let mut color = Rgba([0, 0, 0, 255]);
+                    if item.name == "Blank" {
+                        color = Rgba([96, 215, 242, 255]);
+                        if tile.background_item_id != 0 {
+                            let item = {
+                                let item = item_database
+                                    .get_item(&(tile.background_item_id as u32 + 1))
+                                    .unwrap();
+                                item
+                            };
 
-                    color = Rgba([b, g, r, 255]);
+                            let colors = item.base_color;
+                            let r = ((colors >> 24) & 0xFF) as u8;
+                            let g = ((colors >> 16) & 0xFF) as u8;
+                            let b = ((colors >> 8) & 0xFF) as u8;
+
+                            color = Rgba([b, g, r, 255]);
+                        }
+                    } else {
+                        let item = {
+                            let item = item_database
+                                .get_item(&(tile.foreground_item_id as u32 + 1))
+                                .unwrap();
+                            item
+                        };
+
+                        let colors = item.base_color;
+                        let r = ((colors >> 24) & 0xFF) as u8;
+                        let g = ((colors >> 16) & 0xFF) as u8;
+                        let b = ((colors >> 8) & 0xFF) as u8;
+
+                        color = Rgba([b, g, r, 255]);
+                    }
+
+                    for px in 0..item_pixel_size {
+                        for py in 0..item_pixel_size {
+                            let pixel_x = (x * item_pixel_size + px) as u32;
+                            let pixel_y = (y * item_pixel_size + py) as u32;
+                            img.put_pixel(pixel_x, pixel_y, color);
+                        }
+                    }
                 }
-            } else {
-                let item = {
-                    let item = item_database
-                        .get_item(&(tile.foreground_item_id as u32 + 1))
-                        .unwrap();
-                    item
-                };
-
-                let colors = item.base_color;
-                let r = ((colors >> 24) & 0xFF) as u8;
-                let g = ((colors >> 16) & 0xFF) as u8;
-                let b = ((colors >> 8) & 0xFF) as u8;
-
-                color = Rgba([b, g, r, 255]);
-            }
-
-            for px in 0..item_pixel_size {
-                for py in 0..item_pixel_size {
-                    let pixel_x = (x * item_pixel_size + px) as u32;
-                    let pixel_y = (y * item_pixel_size + py) as u32;
-                    img.put_pixel(pixel_x, pixel_y, color);
+                None => {
+                    for px in 0..item_pixel_size {
+                        for py in 0..item_pixel_size {
+                            let pixel_x = (x * item_pixel_size + px) as u32;
+                            let pixel_y = (y * item_pixel_size + py) as u32;
+                            img.put_pixel(pixel_x, pixel_y, Rgba([255, 255, 0, 255]));
+                        }
+                    }
+                    continue;
                 }
             }
         }
