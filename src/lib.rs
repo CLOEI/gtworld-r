@@ -1156,7 +1156,7 @@ impl World {
                 let flags = data.read_u8().unwrap();
                 let fish_count = data.read_u32::<LittleEndian>().unwrap();
                 let mut fishes = Vec::new();
-                for _ in 0..fish_count {
+                for _ in 0..(fish_count / 2) {
                     let fish_item_id = data.read_u32::<LittleEndian>().unwrap();
                     let lbs = data.read_u32::<LittleEndian>().unwrap();
                     fishes.push(FishInfo { fish_item_id, lbs });
