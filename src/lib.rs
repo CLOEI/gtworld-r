@@ -779,6 +779,10 @@ impl World {
             self.get_extra_tile_data(&mut tile, &mut data, extra_tile_type, &self.item_database);
         }
 
+        if tile.foreground_item_id == 14666 {
+            data.set_position(data.position() + 43);
+        }
+
         if replace {
             let index = (tile.y * self.width + tile.x) as usize;
             self.tiles[index] = tile;
@@ -1300,12 +1304,8 @@ impl World {
             }
             39 => {
                 // TileType::LockBot
-                if tile.foreground_item_id == 14666 {
-                    data.set_position(data.position() + 42);
-                } else {
-                    let time_passed = data.read_u32::<LittleEndian>().unwrap();
-                    tile.tile_type = TileType::LockBot { time_passed };
-                }
+                let time_passed = data.read_u32::<LittleEndian>().unwrap();
+                tile.tile_type = TileType::LockBot { time_passed };
             }
             40 => {
                 // TileType::WeatherMachine
