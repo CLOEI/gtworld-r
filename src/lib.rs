@@ -780,7 +780,9 @@ impl World {
         }
 
         if tile.foreground_item_id == 14666 {
-            data.set_position(data.position() + 43);
+            let str_len = data.read_u32::<LittleEndian>().unwrap();
+            let mut text = vec![0; str_len as usize];
+            data.read_exact(&mut text).unwrap();
         }
 
         if replace {
