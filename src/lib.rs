@@ -334,6 +334,8 @@ pub enum TileType {
     },
     ChemicalSource {
         time_passed: u32,
+        ready_to_harvest: bool,
+        timer: Instant,
     },
     AchievementBlock {
         unknown_1: u32,
@@ -740,6 +742,26 @@ impl World {
                     }
                 }
             }
+            TileType::ChemicalSource {
+                time_passed,
+                ready_to_harvest,
+                timer
+            } => {
+                if ready_to_harvest {
+                    true
+                } else {
+                    let item_database = self.item_database.read().unwrap();
+                    let item = item_database
+                        .get_item(&(tile.foreground_item_id as u32))
+                        .unwrap();
+                    let elapsed = timer.elapsed().as_secs();
+                    if (elapsed + time_passed as u64) >= item.grow_time as u64 {
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
             _ => false,
         }
     }
@@ -971,8 +993,20 @@ impl World {
             9 => {
                 // TileType::ChemicalSource
                 let time_passed = data.read_u32::<LittleEndian>().unwrap();
+                let ready_to_harvest = {
+                    let item_database = item_database.read().unwrap();
+                    let item = item_database
+                        .get_item(&(tile.foreground_item_id as u32))
+                        .unwrap();
+                    if time_passed >= item.grow_time {
+                        true
+                    } else {
+                        false
+                    }
+                };
+                let timer = Instant::now();
 
-                tile.tile_type = TileType::ChemicalSource { time_passed };
+                tile.tile_type = TileType::ChemicalSource { time_passed, ready_to_harvest, timer };
             }
             10 => {
                 // TileType::AchievementBlock
