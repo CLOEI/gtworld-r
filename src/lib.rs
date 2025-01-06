@@ -316,7 +316,7 @@ pub enum TileType {
         time_passed: u32,
         item_on_tree: u8,
         ready_to_harvest: bool,
-        timer: Instant,
+        elapsed: Duration,
     },
     Mailbox {
         unknown_1: String,
@@ -336,7 +336,7 @@ pub enum TileType {
     ChemicalSource {
         time_passed: u32,
         ready_to_harvest: bool,
-        timer: Instant,
+        elapsed: Duration,
     },
     AchievementBlock {
         unknown_1: u32,
@@ -724,8 +724,7 @@ impl World {
         match tile.tile_type {
             TileType::Seed {
                 ready_to_harvest,
-                timer,
-                time_passed,
+                elapsed,
                 ..
             } => {
                 if ready_to_harvest {
@@ -735,8 +734,7 @@ impl World {
                     let item = item_database
                         .get_item(&(tile.foreground_item_id as u32))
                         .unwrap();
-                    let elapsed = timer.elapsed().as_secs();
-                    if (elapsed + time_passed as u64) >= item.grow_time as u64 {
+                    if (elapsed.as_secs()) >= item.grow_time as u64 {
                         true
                     } else {
                         false
@@ -744,9 +742,9 @@ impl World {
                 }
             }
             TileType::ChemicalSource {
-                time_passed,
                 ready_to_harvest,
-                timer
+                elapsed,
+                ..
             } => {
                 if ready_to_harvest {
                     true
@@ -755,8 +753,7 @@ impl World {
                     let item = item_database
                         .get_item(&(tile.foreground_item_id as u32))
                         .unwrap();
-                    let elapsed = timer.elapsed().as_secs();
-                    if (elapsed + time_passed as u64) >= item.grow_time as u64 {
+                    if (elapsed.as_secs()) >= item.grow_time as u64 {
                         true
                     } else {
                         false
@@ -948,13 +945,13 @@ impl World {
                     }
                 };
                 let timer = Instant::now();
-                timer.add(Duration::from_secs(time_passed as u64));
+                let elapsed = timer.elapsed().add(Duration::from_secs(time_passed as u64));
 
                 tile.tile_type = TileType::Seed {
                     time_passed,
                     item_on_tree,
                     ready_to_harvest,
-                    timer,
+                    elapsed,
                 };
             }
             6 => {
@@ -1024,9 +1021,9 @@ impl World {
                     }
                 };
                 let timer = Instant::now();
-                timer.add(Duration::from_secs(time_passed as u64));
+                let elapsed = timer.elapsed().add(Duration::from_secs(time_passed as u64));
 
-                tile.tile_type = TileType::ChemicalSource { time_passed, ready_to_harvest, timer };
+                tile.tile_type = TileType::ChemicalSource { time_passed, ready_to_harvest, elapsed };
             }
             10 => {
                 // TileType::AchievementBlock
