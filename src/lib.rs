@@ -1,8 +1,9 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use gtitem_r::structs::ItemDatabase;
 use std::io::{Cursor, Read};
+use std::ops::Add;
 use std::sync::{Arc, RwLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub struct World {
     pub name: String,
@@ -947,6 +948,7 @@ impl World {
                     }
                 };
                 let timer = Instant::now();
+                timer.add(Duration::from_secs(time_passed as u64));
 
                 tile.tile_type = TileType::Seed {
                     time_passed,
@@ -1022,6 +1024,7 @@ impl World {
                     }
                 };
                 let timer = Instant::now();
+                timer.add(Duration::from_secs(time_passed as u64));
 
                 tile.tile_type = TileType::ChemicalSource { time_passed, ready_to_harvest, timer };
             }
