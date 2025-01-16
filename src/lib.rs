@@ -1,3 +1,6 @@
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use byteorder::{LittleEndian, ReadBytesExt};
 use gtitem_r::structs::ItemDatabase;
 use std::io::{Cursor, Read};
@@ -5,6 +8,8 @@ use std::ops::Add;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct World {
     pub name: String,
     pub width: u32,
@@ -14,11 +19,13 @@ pub struct World {
     pub dropped: Dropped,
     pub base_weather: WeatherType,
     pub current_weather: WeatherType,
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub item_database: Arc<RwLock<ItemDatabase>>,
     pub is_error: bool,
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Tile {
     pub foreground_item_id: u16,
     pub background_item_id: u16,
@@ -30,6 +37,7 @@ pub struct Tile {
 }
 
 #[derive(Debug, Default, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct TileFlags {
     pub has_extra_data: bool,
     pub has_parent: bool,
@@ -126,6 +134,7 @@ impl TileFlags {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum WeatherType {
     Default,
     Sunset,
@@ -296,6 +305,7 @@ impl From<u16> for WeatherType {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum TileType {
     Basic,
     Door {
@@ -600,12 +610,14 @@ pub enum TileType {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FishInfo {
     pub fish_item_id: u32,
     pub lbs: u32,
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SilkWormColor {
     pub a: u8,
     pub r: u8,
@@ -614,24 +626,28 @@ pub struct SilkWormColor {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct StorageBlockItemInfo {
     pub id: u32,
     pub amount: u32,
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CookingOvenIngredientInfo {
     pub item_id: u32,
     pub time_added: u32,
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CyBotCommandData {
     pub command_id: u32,
     pub is_command_used: u32,
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Dropped {
     pub items_count: u32,
     pub last_dropped_item_uid: u32,
@@ -639,6 +655,7 @@ pub struct Dropped {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DroppedItem {
     pub id: u16,
     pub x: f32,
@@ -1724,11 +1741,16 @@ fn test_render_world() {
 
     let item_database = Arc::new(RwLock::new(load_from_file("items.dat").unwrap()));
     let mut world = World::new(item_database);
+
     // get byte from world.dat file
     let mut file = File::open("world.dat").unwrap();
     let mut data = Vec::new();
     file.read_to_end(&mut data).unwrap();
     world.parse(&data);
+
+    // world save to world.json
+    let file = File::create("world.json").unwrap();
+    serde_json::to_writer_pretty(file, &world).unwrap();
 
     let item_pixel_size = 32;
     let img_width = world.width * item_pixel_size;
