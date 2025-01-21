@@ -31,6 +31,7 @@ pub struct Tile {
     pub background_item_id: u16,
     pub parent_block_index: u16,
     pub flags: TileFlags,
+    pub flags_number: u16,
     pub tile_type: TileType,
     pub x: u32,
     pub y: u32,
@@ -671,6 +672,7 @@ impl Tile {
         background_item_id: u16,
         parent_block_index: u16,
         flags: TileFlags,
+        flags_number: u16,
         x: u32,
         y: u32,
     ) -> Tile {
@@ -679,6 +681,7 @@ impl Tile {
             background_item_id,
             parent_block_index,
             flags,
+            flags_number,
             tile_type: TileType::Basic,
             x,
             y,
@@ -792,7 +795,9 @@ impl World {
         tile.foreground_item_id = data.read_u16::<LittleEndian>().unwrap();
         tile.background_item_id = data.read_u16::<LittleEndian>().unwrap();
         tile.parent_block_index = data.read_u16::<LittleEndian>().unwrap();
-        tile.flags = TileFlags::from_u16(data.read_u16::<LittleEndian>().unwrap());
+        let flags = data.read_u16::<LittleEndian>().unwrap();
+        tile.flags = TileFlags::from_u16(flags);
+        tile.flags_number = flags;
 
         let item_count = {
             let item_database = self.item_database.read().unwrap();
@@ -802,7 +807,7 @@ impl World {
             || tile.background_item_id > item_count as u16
         {
             self.is_error = true;
-            let new_tile = Tile::new(0, 0, 0, tile.flags, tile.x, tile.y);
+            let new_tile = Tile::new(0, 0, 0, tile.flags, tile.flags_number, tile.x, tile.y);
             self.tiles.push(new_tile);
             return None;
         }
@@ -853,7 +858,7 @@ impl World {
         for count in 0..tile_count {
             let x = (count) % self.width;
             let y = (count) / self.width;
-            let tile = Tile::new(0, 0, 0, TileFlags::default(), x, y);
+            let tile = Tile::new(0, 0, 0, TileFlags::default(), 0, x, y);
             match self.update_tile(tile, &mut data, false) {
                 Some(_) => {}
                 None => {
