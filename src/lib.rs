@@ -35,6 +35,8 @@ pub struct Tile {
     pub tile_type: TileType,
     pub x: u32,
     pub y: u32,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub item_database: Arc<RwLock<ItemDatabase>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -675,6 +677,7 @@ impl Tile {
         flags_number: u16,
         x: u32,
         y: u32,
+        item_database: Arc<RwLock<ItemDatabase>>
     ) -> Tile {
         Tile {
             foreground_item_id,
@@ -685,6 +688,51 @@ impl Tile {
             tile_type: TileType::Basic,
             x,
             y,
+            item_database,
+        }
+    }
+
+    pub fn harvestable(&self) -> bool {
+        match self.tile_type {
+            TileType::Seed {
+                ready_to_harvest,
+                elapsed,
+                ..
+            } => {
+                if ready_to_harvest {
+                    true
+                } else {
+                    let item_database = self.item_database.read().unwrap();
+                    let item = item_database
+                        .get_item(&(self.foreground_item_id as u32))
+                        .unwrap();
+                    if (elapsed.as_secs()) >= item.grow_time as u64 {
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+            TileType::ChemicalSource {
+                ready_to_harvest,
+                elapsed,
+                ..
+            } => {
+                if ready_to_harvest {
+                    true
+                } else {
+                    let item_database = self.item_database.read().unwrap();
+                    let item = item_database
+                        .get_item(&(self.foreground_item_id as u32))
+                        .unwrap();
+                    if (elapsed.as_secs()) >= item.grow_time as u64 {
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+            _ => false,
         }
     }
 }
@@ -807,7 +855,7 @@ impl World {
             || tile.background_item_id > item_count as u16
         {
             self.is_error = true;
-            let new_tile = Tile::new(0, 0, 0, tile.flags, tile.flags_number, tile.x, tile.y);
+            let new_tile = Tile::new(0, 0, 0, tile.flags, tile.flags_number, tile.x, tile.y, Arc::clone(&self.item_database));
             self.tiles.push(new_tile);
             return None;
         }
@@ -858,7 +906,7 @@ impl World {
         for count in 0..tile_count {
             let x = (count) % self.width;
             let y = (count) / self.width;
-            let tile = Tile::new(0, 0, 0, TileFlags::default(), 0, x, y);
+            let tile = Tile::new(0, 0, 0, TileFlags::default(), 0, x, y, Arc::clone(&self.item_database));
             match self.update_tile(tile, &mut data, false) {
                 Some(_) => {}
                 None => {
