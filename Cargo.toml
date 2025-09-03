@@ -6,6 +6,7 @@ description = "Growtopia World tile serialization"
 repository = "https://github.com/cloei/gtworld-r"
 license = "MIT"
 readme = "README.md"
+authors = ["Cendy"]
 
 
 [dependencies]

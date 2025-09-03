@@ -5,7 +5,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use gtitem_r::structs::ItemDatabase;
 use std::io::{Cursor, Read};
 use std::ops::Add;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
@@ -20,8 +20,10 @@ pub struct World {
     pub base_weather: WeatherType,
     pub current_weather: WeatherType,
     #[cfg_attr(feature = "serde", serde(skip))]
-    pub item_database: Arc<RwLock<ItemDatabase>>,
+    pub item_database: Arc<ItemDatabase>,
     pub is_error: bool,
+    pub version: u16,
+    pub flags: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -36,7 +38,7 @@ pub struct Tile {
     pub x: u32,
     pub y: u32,
     #[cfg_attr(feature = "serde", serde(skip))]
-    pub item_database: Arc<RwLock<ItemDatabase>>,
+    pub item_database: Arc<ItemDatabase>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -313,10 +315,11 @@ pub enum TileType {
     Basic,
     Door {
         text: String,
-        unknown_1: u8,
+        owner_uid: u32,
     },
     Sign {
         text: String,
+        flags: u8,
     },
     Lock {
         settings: u8,
@@ -677,7 +680,7 @@ impl Tile {
         flags_number: u16,
         x: u32,
         y: u32,
-        item_database: Arc<RwLock<ItemDatabase>>
+        item_database: Arc<ItemDatabase>
     ) -> Tile {
         Tile {
             foreground_item_id,
@@ -702,8 +705,7 @@ impl Tile {
                 if ready_to_harvest {
                     true
                 } else {
-                    let item_database = self.item_database.read().unwrap();
-                    let item = item_database
+                    let item = self.item_database
                         .get_item(&(self.foreground_item_id as u32))
                         .unwrap();
                     if (elapsed.as_secs()) >= item.grow_time as u64 {
@@ -721,8 +723,7 @@ impl Tile {
                 if ready_to_harvest {
                     true
                 } else {
-                    let item_database = self.item_database.read().unwrap();
-                    let item = item_database
+                    let item = self.item_database
                         .get_item(&(self.foreground_item_id as u32))
                         .unwrap();
                     if (elapsed.as_secs()) >= item.grow_time as u64 {
@@ -738,7 +739,7 @@ impl Tile {
 }
 
 impl World {
-    pub fn new(item_database: Arc<RwLock<ItemDatabase>>) -> World {
+    pub fn new(item_database: Arc<ItemDatabase>) -> World {
         World {
             name: "EXIT".to_string(),
             width: 0,
@@ -754,6 +755,8 @@ impl World {
             current_weather: WeatherType::Default,
             is_error: false,
             item_database,
+            version: 0,
+            flags: 0,
         }
     }
 
@@ -798,8 +801,7 @@ impl World {
                 if ready_to_harvest {
                     true
                 } else {
-                    let item_database = self.item_database.read().unwrap();
-                    let item = item_database
+                    let item = self.item_database
                         .get_item(&(tile.foreground_item_id as u32))
                         .unwrap();
                     if (elapsed.as_secs()) >= item.grow_time as u64 {
@@ -817,8 +819,7 @@ impl World {
                 if ready_to_harvest {
                     true
                 } else {
-                    let item_database = self.item_database.read().unwrap();
-                    let item = item_database
+                    let item = self.item_database
                         .get_item(&(tile.foreground_item_id as u32))
                         .unwrap();
                     if (elapsed.as_secs()) >= item.grow_time as u64 {
@@ -847,10 +848,8 @@ impl World {
         tile.flags = TileFlags::from_u16(flags);
         tile.flags_number = flags;
 
-        let item_count = {
-            let item_database = self.item_database.read().unwrap();
-            item_database.item_count
-        };
+        let item_count = self.item_database.item_count;
+
         if tile.foreground_item_id > item_count as u16
             || tile.background_item_id > item_count as u16
         {
@@ -888,19 +887,28 @@ impl World {
     pub fn parse(&mut self, data: &[u8]) {
         self.reset();
         let mut data = Cursor::new(data);
-        // first 6 byte is unknown
-        data.set_position(data.position() + 6);
+        let version = data.read_u16::<LittleEndian>().unwrap();
+        if version < 0x19 {
+            self.is_error = true;
+        }
+        self.version = version;
+        let flags = data.read_u32::<LittleEndian>().unwrap();
+        self.flags = flags;
         let str_len = data.read_u16::<LittleEndian>().unwrap();
         let mut name = vec![0; str_len as usize];
         data.read_exact(&mut name).unwrap();
         let width = data.read_u32::<LittleEndian>().unwrap();
         let height = data.read_u32::<LittleEndian>().unwrap();
         let tile_count = data.read_u32::<LittleEndian>().unwrap();
-        data.set_position(data.position() + 5);
+        data.set_position(data.position() + 5); // this probably debug flag?
         self.name = String::from_utf8_lossy(&name).to_string();
         self.width = width;
         self.height = height;
         self.tile_count = tile_count;
+
+        if tile_count > 0xFE01 {
+            self.is_error = true;
+        }
 
         // tiles
         for count in 0..tile_count {
@@ -951,7 +959,7 @@ impl World {
         tile: &mut Tile,
         data: &mut Cursor<&[u8]>,
         item_type: u8,
-        item_database: &Arc<RwLock<ItemDatabase>>,
+        item_database: &Arc<ItemDatabase>,
     ) {
         match item_type {
             1 => {
@@ -960,9 +968,9 @@ impl World {
                 let mut text = vec![0; str_len as usize];
                 data.read_exact(&mut text).unwrap();
                 let text = String::from_utf8_lossy(&text).to_string();
-                let unknown_1 = data.read_u8().unwrap();
+                let flags = data.read_u8().unwrap();
 
-                tile.tile_type = TileType::Door { text, unknown_1 };
+                tile.tile_type = TileType::Sign { text, flags };
             }
             2 => {
                 // TileType::Sign
@@ -970,9 +978,9 @@ impl World {
                 let mut text = vec![0; str_len as usize];
                 data.read_exact(&mut text).unwrap();
                 let text = String::from_utf8_lossy(&text).to_string();
-                let _ = data.read_u32::<LittleEndian>().unwrap();
+                let owner_uid = data.read_u32::<LittleEndian>().unwrap();
 
-                tile.tile_type = TileType::Sign { text };
+                tile.tile_type = TileType::Door { text, owner_uid };
             }
             3 => {
                 // TileType::Lock
@@ -1004,8 +1012,7 @@ impl World {
                 let time_passed = data.read_u32::<LittleEndian>().unwrap();
                 let item_on_tree = data.read_u8().unwrap();
                 let ready_to_harvest = {
-                    let item_database = item_database.read().unwrap();
-                    let item = item_database
+                    let item = self.item_database
                         .get_item(&(tile.foreground_item_id as u32))
                         .unwrap();
                     if item.grow_time <= time_passed {
@@ -1080,10 +1087,7 @@ impl World {
                 // TileType::ChemicalSource
                 let time_passed = data.read_u32::<LittleEndian>().unwrap();
                 let ready_to_harvest = {
-                    let item_database = item_database.read().unwrap();
-                    let item = item_database
-                        .get_item(&(tile.foreground_item_id as u32))
-                        .unwrap();
+                    let item = self.item_database.get_item(&(tile.foreground_item_id as u32)).unwrap();
                     if time_passed >= item.grow_time {
                         true
                     } else {
@@ -1792,8 +1796,8 @@ fn test_render_world() {
     use image::{ImageBuffer, Rgba};
     use std::fs::File;
 
-    let item_database = Arc::new(RwLock::new(load_from_file("items.dat").unwrap()));
-    let mut world = World::new(item_database);
+    let item_database = Arc::new(load_from_file("items.dat").unwrap());
+    let mut world = World::new(item_database.clone());
 
     // get byte from world.dat file
     let mut file = File::open("world.dat").unwrap();
@@ -1801,9 +1805,8 @@ fn test_render_world() {
     file.read_to_end(&mut data).unwrap();
     world.parse(&data);
 
-    // world save to world.json
-    let file = File::create("world.json").unwrap();
-    serde_json::to_writer_pretty(file, &world).unwrap();
+    println!("World name: {}", world.name);
+    println!("World version: {}", world.version);
 
     let item_pixel_size = 32;
     let img_width = world.width * item_pixel_size;
@@ -1814,7 +1817,6 @@ fn test_render_world() {
         for y in 0..world.height {
             match &world.get_tile(x, y) {
                 Some(tile) => {
-                    let item_database = world.item_database.read().unwrap();
                     let item = {
                         let item = item_database
                             .get_item(&(tile.foreground_item_id as u32))
