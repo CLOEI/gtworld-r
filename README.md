@@ -17,8 +17,8 @@ use gtworld_r::World;
 use gtitem_r::load_from_file;
 
 fn main() {
-  let item_database = Arc::new(load_from_file("items.dat").unwrap());
-  let world = World::new(item_database);
+  let item_database = load_from_file("items.dat").unwrap();
+  let world = World::new().parse(world_data, &item_database);
   println!("{:?}", world)
 }
 ```

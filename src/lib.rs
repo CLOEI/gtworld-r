@@ -1,12 +1,11 @@
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
+use anyhow::{Context, Result};
+use bitflags::bitflags;
 use byteorder::{LittleEndian, ReadBytesExt};
 use gtitem_r::structs::ItemDatabase;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read};
-use std::ops::Add;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -19,127 +18,53 @@ pub struct World {
     pub dropped: Dropped,
     pub base_weather: WeatherType,
     pub current_weather: WeatherType,
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub item_database: Arc<ItemDatabase>,
     pub is_error: bool,
     pub version: u16,
     pub flags: u32,
 }
 
+/// Optimized tile structure with better memory layout
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Tile {
     pub foreground_item_id: u16,
     pub background_item_id: u16,
     pub parent_block_index: u16,
-    pub flags: TileFlags,
     pub flags_number: u16,
-    pub tile_type: TileType,
+    pub flags: TileFlags,
+    
     pub x: u32,
     pub y: u32,
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub item_database: Arc<ItemDatabase>,
+    
+    pub tile_type: TileType,
 }
 
-#[derive(Debug, Default, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct TileFlags {
-    pub has_extra_data: bool,
-    pub has_parent: bool,
-    pub was_spliced: bool,
-    pub will_spawn_seeds_too: bool,
-    pub is_seedling: bool,
-    pub flipped_x: bool,
-    pub is_on: bool,
-    pub is_open_to_public: bool,
-    pub bg_is_on: bool,
-    pub fg_alt_mode: bool,
-    pub is_wet: bool,
-    pub glued: bool,
-    pub on_fire: bool,
-    pub painted_red: bool,
-    pub painted_green: bool,
-    pub painted_blue: bool,
-}
-
-impl TileFlags {
-    pub fn from_u16(value: u16) -> Self {
-        Self {
-            has_extra_data: value & 0x01 != 0,
-            has_parent: value & 0x02 != 0,
-            was_spliced: value & 0x04 != 0,
-            will_spawn_seeds_too: value & 0x08 != 0,
-            is_seedling: value & 0x10 != 0,
-            flipped_x: value & 0x20 != 0,
-            is_on: value & 0x40 != 0,
-            is_open_to_public: value & 0x80 != 0,
-            bg_is_on: value & 0x100 != 0,
-            fg_alt_mode: value & 0x200 != 0,
-            is_wet: value & 0x400 != 0,
-            glued: value & 0x800 != 0,
-            on_fire: value & 0x1000 != 0,
-            painted_red: value & 0x2000 != 0,
-            painted_green: value & 0x4000 != 0,
-            painted_blue: value & 0x8000 != 0,
-        }
-    }
-
-    pub fn to_u16(&self) -> u16 {
-        let mut value = 0;
-        if self.has_extra_data {
-            value |= 0x01;
-        }
-        if self.has_parent {
-            value |= 0x02;
-        }
-        if self.was_spliced {
-            value |= 0x04;
-        }
-        if self.will_spawn_seeds_too {
-            value |= 0x08;
-        }
-        if self.is_seedling {
-            value |= 0x10;
-        }
-        if self.flipped_x {
-            value |= 0x20;
-        }
-        if self.is_on {
-            value |= 0x40;
-        }
-        if self.is_open_to_public {
-            value |= 0x80;
-        }
-        if self.bg_is_on {
-            value |= 0x100;
-        }
-        if self.fg_alt_mode {
-            value |= 0x200;
-        }
-        if self.is_wet {
-            value |= 0x400;
-        }
-        if self.glued {
-            value |= 0x800;
-        }
-        if self.on_fire {
-            value |= 0x1000;
-        }
-        if self.painted_red {
-            value |= 0x2000;
-        }
-        if self.painted_green {
-            value |= 0x4000;
-        }
-        if self.painted_blue {
-            value |= 0x8000;
-        }
-        value
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+    pub struct TileFlags: u16 {
+        const HAS_EXTRA_DATA = 0x01;
+        const HAS_PARENT = 0x02;
+        const WAS_SPLICED = 0x04;
+        const WILL_SPAWN_SEEDS_TOO = 0x08;
+        const IS_SEEDLING = 0x10;
+        const FLIPPED_X = 0x20;
+        const IS_ON = 0x40;
+        const IS_OPEN_TO_PUBLIC = 0x80;
+        const BG_IS_ON = 0x100;
+        const FG_ALT_MODE = 0x200;
+        const IS_WET = 0x400;
+        const GLUED = 0x800;
+        const ON_FIRE = 0x1000;
+        const PAINTED_RED = 0x2000;
+        const PAINTED_GREEN = 0x4000;
+        const PAINTED_BLUE = 0x8000;
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[repr(u16)]
 pub enum WeatherType {
     Default,
     Sunset,
@@ -660,15 +585,31 @@ pub struct Dropped {
     pub items: Vec<DroppedItem>,
 }
 
-#[derive(Debug, Clone)]
+impl Dropped {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            items_count: 0,
+            last_dropped_item_uid: 0,
+            items: Vec::with_capacity(capacity),
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.items_count = 0;
+        self.last_dropped_item_uid = 0;
+        self.items.clear();
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DroppedItem {
     pub id: u16,
-    pub x: f32,
-    pub y: f32,
     pub count: u8,
     pub flags: u8,
     pub uid: u32,
+    pub x: f32,
+    pub y: f32,
 }
 
 impl Tile {
@@ -680,9 +621,8 @@ impl Tile {
         flags_number: u16,
         x: u32,
         y: u32,
-        item_database: Arc<ItemDatabase>
-    ) -> Tile {
-        Tile {
+    ) -> Self {
+        Self {
             foreground_item_id,
             background_item_id,
             parent_block_index,
@@ -691,28 +631,23 @@ impl Tile {
             tile_type: TileType::Basic,
             x,
             y,
-            item_database,
         }
     }
 
-    pub fn harvestable(&self) -> bool {
-        match self.tile_type {
+    pub fn harvestable(&self, item_database: &ItemDatabase) -> Result<bool> {
+        match &self.tile_type {
             TileType::Seed {
                 ready_to_harvest,
                 elapsed,
                 ..
             } => {
-                if ready_to_harvest {
-                    true
+                if *ready_to_harvest {
+                    Ok(true)
                 } else {
-                    let item = self.item_database
+                    let item = item_database
                         .get_item(&(self.foreground_item_id as u32))
-                        .unwrap();
-                    if (elapsed.as_secs()) >= item.grow_time as u64 {
-                        true
-                    } else {
-                        false
-                    }
+                        .with_context(|| format!("Failed to get item with ID {}", self.foreground_item_id))?;
+                    Ok(elapsed.as_secs() >= item.grow_time as u64)
                 }
             }
             TileType::ChemicalSource {
@@ -720,59 +655,107 @@ impl Tile {
                 elapsed,
                 ..
             } => {
-                if ready_to_harvest {
-                    true
+                if *ready_to_harvest {
+                    Ok(true)
                 } else {
-                    let item = self.item_database
+                    let item = item_database
                         .get_item(&(self.foreground_item_id as u32))
-                        .unwrap();
-                    if (elapsed.as_secs()) >= item.grow_time as u64 {
-                        true
-                    } else {
-                        false
-                    }
+                        .with_context(|| format!("Failed to get item with ID {}", self.foreground_item_id))?;
+                    Ok(elapsed.as_secs() >= item.grow_time as u64)
                 }
             }
-            _ => false,
+            _ => Ok(false),
         }
     }
 }
 
-impl World {
-    pub fn new(item_database: Arc<ItemDatabase>) -> World {
-        World {
+#[derive(Debug)]
+pub struct WorldBuilder {
+    name: String,
+    width: u32,
+    height: u32,
+    base_weather: WeatherType,
+    current_weather: WeatherType,
+}
+
+impl WorldBuilder {
+    pub fn new() -> Self {
+        Self {
             name: "EXIT".to_string(),
             width: 0,
             height: 0,
-            tile_count: 0,
-            tiles: Vec::new(),
-            dropped: Dropped {
-                items_count: 0,
-                last_dropped_item_uid: 0,
-                items: Vec::new(),
-            },
             base_weather: WeatherType::Default,
             current_weather: WeatherType::Default,
+        }
+    }
+
+    pub fn name<S: Into<String>>(mut self, name: S) -> Self {
+        self.name = name.into();
+        self
+    }
+
+    pub fn dimensions(mut self, width: u32, height: u32) -> Self {
+        self.width = width;
+        self.height = height;
+        self
+    }
+
+    pub fn weather(mut self, base: WeatherType, current: WeatherType) -> Self {
+        self.base_weather = base;
+        self.current_weather = current;
+        self
+    }
+
+    pub fn build(self) -> World {
+        let tile_count = self.width * self.height;
+        World {
+            name: self.name,
+            width: self.width,
+            height: self.height,
+            tile_count,
+            tiles: Vec::with_capacity(tile_count as usize),
+            dropped: Dropped::with_capacity(0),
+            base_weather: self.base_weather,
+            current_weather: self.current_weather,
             is_error: false,
-            item_database,
             version: 0,
             flags: 0,
         }
     }
+}
 
+impl Default for WorldBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl World {
+    pub fn new() -> Self {
+        WorldBuilder::new().build()
+    }
+}
+
+impl Default for World {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl World {
     pub fn reset(&mut self) {
         self.name = "EXIT".to_string();
         self.width = 0;
         self.height = 0;
         self.tile_count = 0;
         self.tiles.clear();
-        self.dropped.items_count = 0;
-        self.dropped.last_dropped_item_uid = 0;
-        self.dropped.items.clear();
+        self.dropped.clear();
         self.base_weather = WeatherType::Default;
         self.current_weather = WeatherType::Default;
+        self.is_error = false;
     }
 
+    #[inline]
     pub fn get_tile_mut(&mut self, x: u32, y: u32) -> Option<&mut Tile> {
         if x >= self.width || y >= self.height {
             return None;
@@ -782,6 +765,7 @@ impl World {
         self.tiles.get_mut(index)
     }
 
+    #[inline]
     pub fn get_tile(&self, x: u32, y: u32) -> Option<&Tile> {
         if x >= self.width || y >= self.height {
             return None;
@@ -791,167 +775,200 @@ impl World {
         self.tiles.get(index)
     }
 
-    pub fn is_tile_harvestable(&self, tile: &Tile) -> bool {
-        match tile.tile_type {
-            TileType::Seed {
-                ready_to_harvest,
-                elapsed,
-                ..
-            } => {
-                if ready_to_harvest {
-                    true
-                } else {
-                    let item = self.item_database
-                        .get_item(&(tile.foreground_item_id as u32))
-                        .unwrap();
-                    if (elapsed.as_secs()) >= item.grow_time as u64 {
-                        true
-                    } else {
-                        false
-                    }
-                }
-            }
-            TileType::ChemicalSource {
-                ready_to_harvest,
-                elapsed,
-                ..
-            } => {
-                if ready_to_harvest {
-                    true
-                } else {
-                    let item = self.item_database
-                        .get_item(&(tile.foreground_item_id as u32))
-                        .unwrap();
-                    if (elapsed.as_secs()) >= item.grow_time as u64 {
-                        true
-                    } else {
-                        false
-                    }
-                }
-            }
-            _ => false,
-        }
-    }
-
-    pub fn is_harvestable(&self, x: u32, y: u32) -> bool {
-        if let Some(tile) = self.get_tile(x, y) {
-            return self.is_tile_harvestable(tile);
-        }
-        false
-    }
-
-    pub fn update_tile(&mut self, mut tile: Tile, mut data: &mut Cursor<&[u8]>, replace: bool) -> Option<()> {
-        tile.foreground_item_id = data.read_u16::<LittleEndian>().unwrap();
-        tile.background_item_id = data.read_u16::<LittleEndian>().unwrap();
-        tile.parent_block_index = data.read_u16::<LittleEndian>().unwrap();
-        let flags = data.read_u16::<LittleEndian>().unwrap();
-        tile.flags = TileFlags::from_u16(flags);
-        tile.flags_number = flags;
-
-        let item_count = self.item_database.item_count;
-
-        if tile.foreground_item_id > item_count as u16
-            || tile.background_item_id > item_count as u16
-        {
-            self.is_error = true;
-            let new_tile = Tile::new(0, 0, 0, tile.flags, tile.flags_number, tile.x, tile.y, Arc::clone(&self.item_database));
-            self.tiles.push(new_tile);
+    #[inline]
+    pub fn tile_index(&self, x: u32, y: u32) -> Option<usize> {
+        if x >= self.width || y >= self.height {
             return None;
         }
+        Some((y * self.width + x) as usize)
+    }
 
-        if tile.flags.has_parent {
-            data.read_u16::<LittleEndian>().unwrap();
+    pub fn is_tile_harvestable(&self, tile: &Tile, item_database: &ItemDatabase) -> Result<bool> {
+        tile.harvestable(item_database)
+    }
+
+    pub fn is_harvestable(&self, x: u32, y: u32, item_database: &ItemDatabase) -> Result<bool> {
+        if let Some(tile) = self.get_tile(x, y) {
+            return self.is_tile_harvestable(tile, item_database);
+        }
+        Ok(false)
+    }
+
+    pub fn are_harvestable(&self, positions: &[(u32, u32)], item_database: &ItemDatabase) -> Result<Vec<bool>> {
+        let mut results = Vec::with_capacity(positions.len());
+        for &(x, y) in positions {
+            results.push(self.is_harvestable(x, y, item_database)?);
+        }
+        Ok(results)
+    }
+
+    pub fn get_harvestable_positions(&self, item_database: &ItemDatabase) -> Result<Vec<(u32, u32)>> {
+        let mut positions = Vec::new();
+        for y in 0..self.height {
+            for x in 0..self.width {
+                if self.is_harvestable(x, y, item_database)? {
+                    positions.push((x, y));
+                }
+            }
+        }
+        Ok(positions)
+    }
+
+    #[inline]
+    pub fn is_valid(&self) -> bool {
+        self.width > 0 && self.height > 0 && !self.is_error && self.tiles.len() == (self.width * self.height) as usize
+    }
+
+    #[inline]
+    pub fn total_tiles(&self) -> u32 {
+        self.width * self.height
+    }
+
+    pub fn update_tile(&mut self, mut tile: Tile, data: &mut Cursor<&[u8]>, replace: bool, item_database: &ItemDatabase) -> Result<()> {
+        tile.foreground_item_id = data.read_u16::<LittleEndian>()
+            .context("Failed to read foreground item ID")?;
+        tile.background_item_id = data.read_u16::<LittleEndian>()
+            .context("Failed to read background item ID")?;
+        tile.parent_block_index = data.read_u16::<LittleEndian>()
+            .context("Failed to read parent block index")?;
+        let flags = data.read_u16::<LittleEndian>()
+            .context("Failed to read tile flags")?;
+        tile.flags = TileFlags::from_bits_truncate(flags);
+        tile.flags_number = flags;
+
+        if tile.foreground_item_id > item_database.item_count as u16
+            || tile.background_item_id > item_database.item_count as u16
+        {
+            self.is_error = true;
+            let new_tile = Tile::new(0, 0, 0, tile.flags, tile.flags_number, tile.x, tile.y);
+            self.tiles.push(new_tile);
+            return Err(anyhow::anyhow!("Item ID out of range"));
         }
 
-        if tile.flags.has_extra_data {
-            let extra_tile_type = data.read_u8().unwrap();
-            self.get_extra_tile_data(&mut tile, &mut data, extra_tile_type, &self.item_database);
+        if tile.flags.contains(TileFlags::HAS_PARENT) {
+            data.read_u16::<LittleEndian>()
+                .context("Failed to read parent data")?;
+        }
+
+        if tile.flags.contains(TileFlags::HAS_EXTRA_DATA) {
+            let extra_tile_type = data.read_u8()
+                .context("Failed to read extra tile type")?;
+            self.get_extra_tile_data(&mut tile, data, extra_tile_type, item_database)?;
         }
 
         if tile.foreground_item_id == 14666 {
-            let str_len = data.read_u32::<LittleEndian>().unwrap();
+            let str_len = data.read_u32::<LittleEndian>()
+                .context("Failed to read string length for special tile")?;
             let mut text = vec![0; str_len as usize];
-            data.read_exact(&mut text).unwrap();
+            data.read_exact(&mut text)
+                .context("Failed to read special tile text")?;
         }
 
         if replace {
             let index = (tile.y * self.width + tile.x) as usize;
-            self.tiles[index] = tile;
+            if index < self.tiles.len() {
+                self.tiles[index] = tile;
+            } else {
+                return Err(anyhow::anyhow!("Tile index {} out of bounds", index));
+            }
         } else {
             self.tiles.push(tile);
         }
 
-        Some(())
+        Ok(())
     }
 
-    pub fn parse(&mut self, data: &[u8]) {
+    pub fn parse(&mut self, data: &[u8], item_database: &ItemDatabase) -> Result<()> {
         self.reset();
         let mut data = Cursor::new(data);
-        let version = data.read_u16::<LittleEndian>().unwrap();
+        
+        let version = data.read_u16::<LittleEndian>()
+            .context("Failed to read version")?;
         if version < 0x19 {
             self.is_error = true;
+            return Err(anyhow::anyhow!("Unsupported version: {}", version));
         }
         self.version = version;
-        let flags = data.read_u32::<LittleEndian>().unwrap();
-        self.flags = flags;
-        let str_len = data.read_u16::<LittleEndian>().unwrap();
+        
+        self.flags = data.read_u32::<LittleEndian>()
+            .context("Failed to read world flags")?;
+            
+        let str_len = data.read_u16::<LittleEndian>()
+            .context("Failed to read name length")?;
         let mut name = vec![0; str_len as usize];
-        data.read_exact(&mut name).unwrap();
-        let width = data.read_u32::<LittleEndian>().unwrap();
-        let height = data.read_u32::<LittleEndian>().unwrap();
-        let tile_count = data.read_u32::<LittleEndian>().unwrap();
-        data.set_position(data.position() + 5); // this probably debug flag?
+        data.read_exact(&mut name)
+            .context("Failed to read world name")?;
+            
+        self.width = data.read_u32::<LittleEndian>()
+            .context("Failed to read world width")?;
+        self.height = data.read_u32::<LittleEndian>()
+            .context("Failed to read world height")?;
+        self.tile_count = data.read_u32::<LittleEndian>()
+            .context("Failed to read tile count")?;
+            
+        // Skip debug flag
+        data.set_position(data.position() + 5);
+        
         self.name = String::from_utf8_lossy(&name).to_string();
-        self.width = width;
-        self.height = height;
-        self.tile_count = tile_count;
 
-        if tile_count > 0xFE01 {
+        if self.tile_count > 0xFE01 {
             self.is_error = true;
+            return Err(anyhow::anyhow!("Tile count too large: {}", self.tile_count));
         }
 
-        // tiles
-        for count in 0..tile_count {
-            let x = (count) % self.width;
-            let y = (count) / self.width;
-            let tile = Tile::new(0, 0, 0, TileFlags::default(), 0, x, y, Arc::clone(&self.item_database));
-            match self.update_tile(tile, &mut data, false) {
-                Some(_) => {}
-                None => {
-                    break;
-                }
+        self.tiles.reserve(self.tile_count as usize);
+
+        for count in 0..self.tile_count {
+            let x = count % self.width;
+            let y = count / self.width;
+            let tile = Tile::new(0, 0, 0, TileFlags::empty(), 0, x, y);
+            if let Err(e) = self.update_tile(tile, &mut data, false, item_database) {
+                self.is_error = true;
+                return Err(e).context("Failed to parse tile data");
             }
         }
 
-        if self.is_error {
-            return;
-        }
-
-        data.set_position(data.position() + 12); // it exist in the binary, i don't know what it is
-        self.dropped.items_count = data.read_u32::<LittleEndian>().unwrap();
-        self.dropped.last_dropped_item_uid = data.read_u32::<LittleEndian>().unwrap();
+        data.set_position(data.position() + 12);
+        
+        // Parse dropped items
+        self.dropped.items_count = data.read_u32::<LittleEndian>()
+            .context("Failed to read dropped items count")?;
+        self.dropped.last_dropped_item_uid = data.read_u32::<LittleEndian>()
+            .context("Failed to read last dropped item UID")?;
+            
+        self.dropped.items.reserve(self.dropped.items_count as usize);
+        
         for _ in 0..self.dropped.items_count {
-            let id = data.read_u16::<LittleEndian>().unwrap();
-            let x = data.read_f32::<LittleEndian>().unwrap();
-            let y = data.read_f32::<LittleEndian>().unwrap();
-            let count = data.read_u8().unwrap();
-            let flags = data.read_u8().unwrap();
-            let uid = data.read_u32::<LittleEndian>().unwrap();
+            let id = data.read_u16::<LittleEndian>()
+                .context("Failed to read dropped item ID")?;
+            let x = data.read_f32::<LittleEndian>()
+                .context("Failed to read dropped item x position")?;
+            let y = data.read_f32::<LittleEndian>()
+                .context("Failed to read dropped item y position")?;
+            let count = data.read_u8()
+                .context("Failed to read dropped item count")?;
+            let flags = data.read_u8()
+                .context("Failed to read dropped item flags")?;
+            let uid = data.read_u32::<LittleEndian>()
+                .context("Failed to read dropped item UID")?;
+                
             self.dropped.items.push(DroppedItem {
-                id,
-                x,
-                y,
-                count,
-                flags,
-                uid,
+                id, x, y, count, flags, uid,
             });
         }
 
-        let base_weather = data.read_u16::<LittleEndian>().unwrap();
-        data.read_u16::<LittleEndian>().unwrap(); // unknown
-        let current_weather = data.read_u16::<LittleEndian>().unwrap();
+        // Parse weather
+        let base_weather = data.read_u16::<LittleEndian>()
+            .context("Failed to read base weather")?;
+        data.read_u16::<LittleEndian>()
+            .context("Failed to read unknown weather field")?;
+        let current_weather = data.read_u16::<LittleEndian>()
+            .context("Failed to read current weather")?;
+            
         self.base_weather = WeatherType::from(base_weather);
         self.current_weather = WeatherType::from(current_weather);
+        
+        Ok(())
     }
 
     fn get_extra_tile_data(
@@ -959,41 +976,55 @@ impl World {
         tile: &mut Tile,
         data: &mut Cursor<&[u8]>,
         item_type: u8,
-        item_database: &Arc<ItemDatabase>,
-    ) {
+        item_database: &ItemDatabase,
+    ) -> Result<()> {
         match item_type {
             1 => {
-                // TileType::Door
-                let str_len = data.read_u16::<LittleEndian>().unwrap();
+                // TileType::Sign
+                let str_len = data.read_u16::<LittleEndian>()
+                    .context("Failed to read sign text length")?;
                 let mut text = vec![0; str_len as usize];
-                data.read_exact(&mut text).unwrap();
+                data.read_exact(&mut text)
+                    .context("Failed to read sign text")?;
                 let text = String::from_utf8_lossy(&text).to_string();
-                let flags = data.read_u8().unwrap();
+                let flags = data.read_u8()
+                    .context("Failed to read sign flags")?;
 
                 tile.tile_type = TileType::Sign { text, flags };
             }
             2 => {
-                // TileType::Sign
-                let str_len = data.read_u16::<LittleEndian>().unwrap();
+                // TileType::Door
+                let str_len = data.read_u16::<LittleEndian>()
+                    .context("Failed to read door text length")?;
                 let mut text = vec![0; str_len as usize];
-                data.read_exact(&mut text).unwrap();
+                data.read_exact(&mut text)
+                    .context("Failed to read door text")?;
                 let text = String::from_utf8_lossy(&text).to_string();
-                let owner_uid = data.read_u32::<LittleEndian>().unwrap();
+                let owner_uid = data.read_u32::<LittleEndian>()
+                    .context("Failed to read door owner UID")?;
 
                 tile.tile_type = TileType::Door { text, owner_uid };
             }
             3 => {
                 // TileType::Lock
-                let settings = data.read_u8().unwrap();
-                let owner_uid = data.read_u32::<LittleEndian>().unwrap();
-                let access_count = data.read_u32::<LittleEndian>().unwrap();
-                let mut access_uids = Vec::new();
+                let settings = data.read_u8()
+                    .context("Failed to read lock settings")?;
+                let owner_uid = data.read_u32::<LittleEndian>()
+                    .context("Failed to read lock owner UID")?;
+                let access_count = data.read_u32::<LittleEndian>()
+                    .context("Failed to read lock access count")?;
+                    
+                let mut access_uids = Vec::with_capacity(access_count as usize);
                 for _ in 0..access_count {
-                    access_uids.push(data.read_u32::<LittleEndian>().unwrap());
+                    access_uids.push(data.read_u32::<LittleEndian>()
+                        .context("Failed to read lock access UID")?);
                 }
-                let minimum_level = data.read_u8().unwrap();
+                
+                let minimum_level = data.read_u8()
+                    .context("Failed to read lock minimum level")?;
                 let mut unknown_1 = [0; 7];
-                data.read_exact(&mut unknown_1).unwrap();
+                data.read_exact(&mut unknown_1)
+                    .context("Failed to read lock unknown data")?;
 
                 if tile.foreground_item_id == 5814 {
                     data.set_position(data.position() + 16);
@@ -1009,20 +1040,20 @@ impl World {
             }
             4 => {
                 // TileType::Seed
-                let time_passed = data.read_u32::<LittleEndian>().unwrap();
-                let item_on_tree = data.read_u8().unwrap();
+                let time_passed = data.read_u32::<LittleEndian>()
+                    .context("Failed to read seed time passed")?;
+                let item_on_tree = data.read_u8()
+                    .context("Failed to read seed item on tree")?;
+                    
                 let ready_to_harvest = {
-                    let item = self.item_database
+                    let item = item_database
                         .get_item(&(tile.foreground_item_id as u32))
-                        .unwrap();
-                    if item.grow_time <= time_passed {
-                        true
-                    } else {
-                        false
-                    }
+                        .with_context(|| format!("Failed to get item with ID {}", tile.foreground_item_id))?;
+                    item.grow_time <= time_passed
                 };
-                let timer = Instant::now();
-                let elapsed = timer.elapsed().add(Duration::from_secs(time_passed as u64));
+                
+                // More efficient time handling
+                let elapsed = Duration::from_secs(time_passed as u64);
 
                 tile.tile_type = TileType::Seed {
                     time_passed,
@@ -1085,17 +1116,15 @@ impl World {
             }
             9 => {
                 // TileType::ChemicalSource
-                let time_passed = data.read_u32::<LittleEndian>().unwrap();
+                let time_passed = data.read_u32::<LittleEndian>()
+                    .context("Failed to read chemical source time passed")?;
                 let ready_to_harvest = {
-                    let item = self.item_database.get_item(&(tile.foreground_item_id as u32)).unwrap();
-                    if time_passed >= item.grow_time {
-                        true
-                    } else {
-                        false
-                    }
+                    let item = item_database
+                        .get_item(&(tile.foreground_item_id as u32))
+                        .with_context(|| format!("Failed to get item with ID {}", tile.foreground_item_id))?;
+                    time_passed >= item.grow_time
                 };
-                let timer = Instant::now();
-                let elapsed = timer.elapsed().add(Duration::from_secs(time_passed as u64));
+                let elapsed = Duration::from_secs(time_passed as u64);
 
                 tile.tile_type = TileType::ChemicalSource { time_passed, ready_to_harvest, elapsed };
             }
@@ -1786,7 +1815,8 @@ impl World {
             _ => {
                 tile.tile_type = TileType::Basic;
             }
-        };
+        }
+        Ok(())
     }
 }
 
@@ -1796,14 +1826,13 @@ fn test_render_world() {
     use image::{ImageBuffer, Rgba};
     use std::fs::File;
 
-    let item_database = Arc::new(load_from_file("items.dat").unwrap());
-    let mut world = World::new(item_database.clone());
+    let item_database = load_from_file("items.dat").unwrap();
+    let mut world = World::new();
 
-    // get byte from world.dat file
     let mut file = File::open("world.dat").unwrap();
     let mut data = Vec::new();
     file.read_to_end(&mut data).unwrap();
-    world.parse(&data);
+    world.parse(&data, &item_database).unwrap();
 
     println!("World name: {}", world.name);
     println!("World version: {}", world.version);
@@ -1817,46 +1846,35 @@ fn test_render_world() {
         for y in 0..world.height {
             match &world.get_tile(x, y) {
                 Some(tile) => {
-                    let item = {
-                        let item = item_database
-                            .get_item(&(tile.foreground_item_id as u32))
-                            .unwrap();
-                        item
-                    };
+                    let item = item_database.get_item(&(tile.foreground_item_id as u32)).unwrap();
 
-                    let mut color = Rgba([0, 0, 0, 255]);
-                    if item.name == "Blank" {
-                        color = Rgba([96, 215, 242, 255]);
+                    let color = if item.name == "Blank" {
                         if tile.background_item_id != 0 {
-                            let item = {
-                                let item = item_database
-                                    .get_item(&(tile.background_item_id as u32 + 1))
-                                    .unwrap();
-                                item
-                            };
+                            let item = item_database
+                                .get_item(&(tile.background_item_id as u32 + 1))
+                                .unwrap();
 
                             let colors = item.base_color;
                             let r = ((colors >> 24) & 0xFF) as u8;
                             let g = ((colors >> 16) & 0xFF) as u8;
                             let b = ((colors >> 8) & 0xFF) as u8;
 
-                            color = Rgba([b, g, r, 255]);
+                            Rgba([b, g, r, 255])
+                        } else {
+                            Rgba([96, 215, 242, 255])
                         }
                     } else {
-                        let item = {
-                            let item = item_database
-                                .get_item(&(tile.foreground_item_id as u32 + 1))
-                                .unwrap();
-                            item
-                        };
+                        let item = item_database
+                            .get_item(&(tile.foreground_item_id as u32 + 1))
+                            .unwrap();
 
                         let colors = item.base_color;
                         let r = ((colors >> 24) & 0xFF) as u8;
                         let g = ((colors >> 16) & 0xFF) as u8;
                         let b = ((colors >> 8) & 0xFF) as u8;
 
-                        color = Rgba([b, g, r, 255]);
-                    }
+                        Rgba([b, g, r, 255])
+                    };
 
                     for px in 0..item_pixel_size {
                         for py in 0..item_pixel_size {
