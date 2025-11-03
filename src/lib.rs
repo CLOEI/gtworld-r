@@ -538,6 +538,12 @@ pub enum TileType {
         unknown_1: u16,
         unknown_2: u16,
     },
+    TesseractManipulator {
+        gems: u32,
+        unknown_2: u32,
+        item_id: u32,
+        unknown_4: u32,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -842,7 +848,15 @@ impl World {
             self.is_error = true;
             let new_tile = Tile::new(0, 0, 0, tile.flags, tile.flags_number, tile.x, tile.y);
             self.tiles.push(new_tile);
-            return Err(anyhow::anyhow!("Item ID out of range"));
+            return Err(anyhow::anyhow!(
+                "Item ID out of range at cursor position {}: foreground_id={}, background_id={}, max_item_count={}, tile position=({}, {})",
+                data.position(),
+                tile.foreground_item_id,
+                tile.background_item_id,
+                item_database.item_count,
+                tile.x,
+                tile.y
+            ));
         }
 
         if tile.flags.contains(TileFlags::HAS_PARENT) {
@@ -881,7 +895,7 @@ impl World {
     pub fn parse(&mut self, data: &[u8], item_database: &ItemDatabase) -> Result<()> {
         self.reset();
         let mut data = Cursor::new(data);
-        
+
         let version = data.read_u16::<LittleEndian>()
             .context("Failed to read version")?;
         if version < 0x19 {
@@ -889,26 +903,26 @@ impl World {
             return Err(anyhow::anyhow!("Unsupported version: {}", version));
         }
         self.version = version;
-        
+
         self.flags = data.read_u32::<LittleEndian>()
             .context("Failed to read world flags")?;
-            
+
         let str_len = data.read_u16::<LittleEndian>()
             .context("Failed to read name length")?;
         let mut name = vec![0; str_len as usize];
         data.read_exact(&mut name)
             .context("Failed to read world name")?;
-            
+
         self.width = data.read_u32::<LittleEndian>()
             .context("Failed to read world width")?;
         self.height = data.read_u32::<LittleEndian>()
             .context("Failed to read world height")?;
         self.tile_count = data.read_u32::<LittleEndian>()
             .context("Failed to read tile count")?;
-            
+
         // Skip debug flag
         data.set_position(data.position() + 5);
-        
+
         self.name = String::from_utf8_lossy(&name).to_string();
 
         if self.tile_count > 0xFE01 {
@@ -924,7 +938,7 @@ impl World {
             let tile = Tile::new(0, 0, 0, TileFlags::empty(), 0, x, y);
             if let Err(e) = self.update_tile(tile, &mut data, false, item_database) {
                 self.is_error = true;
-                return Err(e).context("Failed to parse tile data");
+                return Err(e).context(format!("Failed to parse tile {} at ({}, {})", count, x, y));
             }
         }
 
@@ -1812,7 +1826,27 @@ impl World {
                     unknown_2,
                 };
             }
+            69 => {
+                // TileType::TesseractManipulator (item 6952)
+                let gems = data.read_u32::<LittleEndian>()
+                    .context("Failed to read tesseract unknown_1")?;
+                let unknown_2 = data.read_u32::<LittleEndian>()
+                    .context("Failed to read tesseract unknown_2")?;
+                let item_id = data.read_u32::<LittleEndian>()
+                    .context("Failed to read tesseract unknown_3")?;
+                let unknown_4 = data.read_u32::<LittleEndian>()
+                    .context("Failed to read tesseract unknown_4")?;
+
+                tile.tile_type = TileType::TesseractManipulator {
+                    gems,
+                    unknown_2,
+                    item_id,
+                    unknown_4,
+                };
+            }
             _ => {
+                eprintln!("WARNING: Completely unknown tile type {} at fg_item={}",
+                    item_type, tile.foreground_item_id);
                 tile.tile_type = TileType::Basic;
             }
         }
@@ -1832,67 +1866,67 @@ fn test_render_world() {
     let mut file = File::open("world.dat").unwrap();
     let mut data = Vec::new();
     file.read_to_end(&mut data).unwrap();
+
     world.parse(&data, &item_database).unwrap();
 
     println!("World name: {}", world.name);
     println!("World version: {}", world.version);
+    println!("Tiles: {}", world.tiles.len());
 
     let item_pixel_size = 32;
     let img_width = world.width * item_pixel_size;
     let img_height = world.height * item_pixel_size;
     let mut img = ImageBuffer::<Rgba<u8>, Vec<u8>>::new(img_width as u32, img_height as u32);
 
-    for x in 0..world.width {
-        for y in 0..world.height {
-            match &world.get_tile(x, y) {
+    for y in 0..world.height {
+        for x in 0..world.width {
+            let color = match world.get_tile(x, y) {
                 Some(tile) => {
-                    let item = item_database.get_item(&(tile.foreground_item_id as u32)).unwrap();
-
-                    let color = if item.name == "Blank" {
-                        if tile.background_item_id != 0 {
-                            let item = item_database
-                                .get_item(&(tile.background_item_id as u32 + 1))
-                                .unwrap();
-
-                            let colors = item.base_color;
-                            let r = ((colors >> 24) & 0xFF) as u8;
-                            let g = ((colors >> 16) & 0xFF) as u8;
-                            let b = ((colors >> 8) & 0xFF) as u8;
-
-                            Rgba([b, g, r, 255])
+                    // Highlight Tesseract Manipulator (6952) in pink/rose
+                    if tile.foreground_item_id == 6952 || tile.background_item_id == 6952 {
+                        Rgba([255, 105, 180, 255]) // Hot pink for Tesseract Manipulator
+                    } else if tile.foreground_item_id > item_database.item_count as u16 {
+                        Rgba([255, 0, 255, 255]) // Magenta for invalid item ID
+                    } else if let Some(item) = item_database.get_item(&(tile.foreground_item_id as u32)) {
+                        if item.name == "Blank" {
+                            if tile.background_item_id != 0 && tile.background_item_id <= item_database.item_count as u16 {
+                                if let Some(bg_item) = item_database.get_item(&(tile.background_item_id as u32 + 1)) {
+                                    let colors = bg_item.base_color;
+                                    let r = ((colors >> 24) & 0xFF) as u8;
+                                    let g = ((colors >> 16) & 0xFF) as u8;
+                                    let b = ((colors >> 8) & 0xFF) as u8;
+                                    Rgba([b, g, r, 255])
+                                } else {
+                                    Rgba([255, 255, 0, 255]) // Yellow for failed bg lookup
+                                }
+                            } else {
+                                Rgba([96, 215, 242, 255]) // Sky blue for blank
+                            }
                         } else {
-                            Rgba([96, 215, 242, 255])
+                            if let Some(fg_item) = item_database.get_item(&(tile.foreground_item_id as u32 + 1)) {
+                                let colors = fg_item.base_color;
+                                let r = ((colors >> 24) & 0xFF) as u8;
+                                let g = ((colors >> 16) & 0xFF) as u8;
+                                let b = ((colors >> 8) & 0xFF) as u8;
+                                Rgba([b, g, r, 255])
+                            } else {
+                                Rgba([255, 255, 0, 255]) // Yellow for failed fg lookup
+                            }
                         }
                     } else {
-                        let item = item_database
-                            .get_item(&(tile.foreground_item_id as u32 + 1))
-                            .unwrap();
-
-                        let colors = item.base_color;
-                        let r = ((colors >> 24) & 0xFF) as u8;
-                        let g = ((colors >> 16) & 0xFF) as u8;
-                        let b = ((colors >> 8) & 0xFF) as u8;
-
-                        Rgba([b, g, r, 255])
-                    };
-
-                    for px in 0..item_pixel_size {
-                        for py in 0..item_pixel_size {
-                            let pixel_x = (x * item_pixel_size + px) as u32;
-                            let pixel_y = (y * item_pixel_size + py) as u32;
-                            img.put_pixel(pixel_x, pixel_y, color);
-                        }
+                        Rgba([255, 255, 0, 255]) // Yellow for failed item lookup
                     }
                 }
                 None => {
-                    for px in 0..item_pixel_size {
-                        for py in 0..item_pixel_size {
-                            let pixel_x = (x * item_pixel_size + px) as u32;
-                            let pixel_y = (y * item_pixel_size + py) as u32;
-                            img.put_pixel(pixel_x, pixel_y, Rgba([255, 255, 0, 255]));
-                        }
-                    }
-                    continue;
+                    Rgba([255, 255, 0, 255]) // Yellow for missing tile
+                }
+            };
+
+            for px in 0..item_pixel_size {
+                for py in 0..item_pixel_size {
+                    let pixel_x = (x * item_pixel_size + px) as u32;
+                    let pixel_y = (y * item_pixel_size + py) as u32;
+                    img.put_pixel(pixel_x, pixel_y, color);
                 }
             }
         }
