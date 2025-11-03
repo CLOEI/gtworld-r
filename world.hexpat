@@ -511,6 +511,12 @@ struct Tile {
         u32 special_str_len;
         char special_text[special_str_len];
     }
+
+    // Handle item 8642 (Bountiful Lattice Fence Roots) - has property bag data
+    if (foreground_item_id == 8642) {
+        u32 property_data_len;
+        u8 property_data[property_data_len];
+    }
 };
 
 struct DroppedItem {
