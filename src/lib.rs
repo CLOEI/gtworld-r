@@ -878,6 +878,15 @@ impl World {
                 .context("Failed to read special tile text")?;
         }
 
+        // Handle item 8642 (Bountiful Lattice Fence Roots)
+        if tile.foreground_item_id == 8642 {
+            let data_len = data.read_u32::<LittleEndian>()
+                .context("Failed to read data length for item 8642")?;
+            let mut property_data = vec![0; data_len as usize];
+            data.read_exact(&mut property_data)
+                .context("Failed to read property data for item 8642")?;
+        }
+
         if replace {
             let index = (tile.y * self.width + tile.x) as usize;
             if index < self.tiles.len() {
