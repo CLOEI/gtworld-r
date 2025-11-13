@@ -885,23 +885,29 @@ impl World {
             self.get_extra_tile_data(&mut tile, data, extra_tile_type, item_database)?;
         }
 
-        if tile.foreground_item_id == 14666 {
-            let str_len = data
-                .read_u32::<LittleEndian>()
-                .context("Failed to read string length for special tile")?;
-            let mut text = vec![0; str_len as usize];
-            data.read_exact(&mut text)
-                .context("Failed to read special tile text")?;
-        }
+        let db_item = item_database
+            .get_item(&(tile.foreground_item_id as u32))
+            .context(format!(
+                "Failed to get item with ID {}",
+                tile.foreground_item_id
+            ))?;
 
-        // Handle item 8642 (Bountiful Lattice Fence Roots)
-        if tile.foreground_item_id == 8642 {
-            let data_len = data
-                .read_u32::<LittleEndian>()
-                .context("Failed to read data length for item 8642")?;
-            let mut property_data = vec![0; data_len as usize];
-            data.read_exact(&mut property_data)
-                .context("Failed to read property data for item 8642")?;
+        // this one doesn't have xml file so we'll have deal with it
+        let tiles_with_cbor_data = [
+            15376, // Party Projector
+            8642,  // Bountiful Lattice Fence Roots
+        ];
+
+        if db_item.file_name.ends_with(".xml")
+            || tiles_with_cbor_data.contains(&(tile.foreground_item_id as u32))
+        {
+            let cbor_size = data.read_u32::<LittleEndian>().unwrap();
+            let mut cbor_raw = vec![0; cbor_size as usize];
+            data.read_exact(&mut cbor_raw).unwrap();
+
+            let mut reader = Cursor::new(&cbor_raw);
+            let value: ciborium::Value = ciborium::de::from_reader(&mut reader)?;
+            println!("Tile {} has CBOR value: {:?}", tile.foreground_item_id, value);
         }
 
         if replace {
