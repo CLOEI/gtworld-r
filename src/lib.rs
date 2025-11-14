@@ -2,13 +2,11 @@ use anyhow::{Context, Result};
 use bitflags::bitflags;
 use byteorder::{LittleEndian, ReadBytesExt};
 use gtitem_r::structs::ItemDatabase;
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read};
 use std::time::Duration;
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct World {
     pub name: String,
     pub width: u32,
@@ -24,24 +22,22 @@ pub struct World {
 }
 
 /// Optimized tile structure with better memory layout
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Tile {
     pub foreground_item_id: u16,
     pub background_item_id: u16,
     pub parent_block_index: u16,
     pub flags_number: u16,
     pub flags: TileFlags,
-    
+
     pub x: u32,
     pub y: u32,
-    
+
     pub tile_type: TileType,
 }
 
 bitflags! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+    #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
     pub struct TileFlags: u16 {
         const HAS_EXTRA_DATA = 0x01;
         const HAS_PARENT = 0x02;
@@ -62,8 +58,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
 pub enum WeatherType {
     Default,
@@ -234,8 +229,7 @@ impl From<u16> for WeatherType {
     }
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum TileType {
     Basic,
     Door {
@@ -377,6 +371,8 @@ pub enum TileType {
         unknown_1: u32,
         unknown_2: u32,
         can_be_fed: u8,
+        food_saturation: u32,
+        water_saturation: u32,
         color: SilkWormColor,
         sick_duration: u32,
     },
@@ -390,9 +386,8 @@ pub enum TileType {
     },
     PetBattleCage {
         label: String,
-        base_pet: u32,
-        combined_pet_1: u32,
-        combined_pet_2: u32,
+        unknown_1: [u8; 12],
+        extra: PetBattleCageExtra,
     },
     PetTrainer {
         name: String,
@@ -546,15 +541,13 @@ pub enum TileType {
     },
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FishInfo {
     pub fish_item_id: u32,
     pub lbs: u32,
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SilkWormColor {
     pub a: u8,
     pub r: u8,
@@ -562,29 +555,31 @@ pub struct SilkWormColor {
     pub b: u8,
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StorageBlockItemInfo {
     pub id: u32,
     pub amount: u32,
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CookingOvenIngredientInfo {
     pub item_id: u32,
     pub time_added: u32,
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CyBotCommandData {
     pub command_id: u32,
     pub is_command_used: u32,
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PetBattleCageExtra {
+    damage: u32,
+    pet: Vec<u32>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Dropped {
     pub items_count: u32,
     pub last_dropped_item_uid: u32,
@@ -607,8 +602,7 @@ impl Dropped {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct DroppedItem {
     pub id: u16,
     pub count: u8,
@@ -652,7 +646,9 @@ impl Tile {
                 } else {
                     let item = item_database
                         .get_item(&(self.foreground_item_id as u32))
-                        .with_context(|| format!("Failed to get item with ID {}", self.foreground_item_id))?;
+                        .with_context(|| {
+                            format!("Failed to get item with ID {}", self.foreground_item_id)
+                        })?;
                     Ok(elapsed.as_secs() >= item.grow_time as u64)
                 }
             }
@@ -666,7 +662,9 @@ impl Tile {
                 } else {
                     let item = item_database
                         .get_item(&(self.foreground_item_id as u32))
-                        .with_context(|| format!("Failed to get item with ID {}", self.foreground_item_id))?;
+                        .with_context(|| {
+                            format!("Failed to get item with ID {}", self.foreground_item_id)
+                        })?;
                     Ok(elapsed.as_secs() >= item.grow_time as u64)
                 }
             }
@@ -800,7 +798,11 @@ impl World {
         Ok(false)
     }
 
-    pub fn are_harvestable(&self, positions: &[(u32, u32)], item_database: &ItemDatabase) -> Result<Vec<bool>> {
+    pub fn are_harvestable(
+        &self,
+        positions: &[(u32, u32)],
+        item_database: &ItemDatabase,
+    ) -> Result<Vec<bool>> {
         let mut results = Vec::with_capacity(positions.len());
         for &(x, y) in positions {
             results.push(self.is_harvestable(x, y, item_database)?);
@@ -808,7 +810,10 @@ impl World {
         Ok(results)
     }
 
-    pub fn get_harvestable_positions(&self, item_database: &ItemDatabase) -> Result<Vec<(u32, u32)>> {
+    pub fn get_harvestable_positions(
+        &self,
+        item_database: &ItemDatabase,
+    ) -> Result<Vec<(u32, u32)>> {
         let mut positions = Vec::new();
         for y in 0..self.height {
             for x in 0..self.width {
@@ -822,7 +827,10 @@ impl World {
 
     #[inline]
     pub fn is_valid(&self) -> bool {
-        self.width > 0 && self.height > 0 && !self.is_error && self.tiles.len() == (self.width * self.height) as usize
+        self.width > 0
+            && self.height > 0
+            && !self.is_error
+            && self.tiles.len() == (self.width * self.height) as usize
     }
 
     #[inline]
@@ -830,14 +838,24 @@ impl World {
         self.width * self.height
     }
 
-    pub fn update_tile(&mut self, mut tile: Tile, data: &mut Cursor<&[u8]>, replace: bool, item_database: &ItemDatabase) -> Result<()> {
-        tile.foreground_item_id = data.read_u16::<LittleEndian>()
+    pub fn update_tile(
+        &mut self,
+        mut tile: Tile,
+        data: &mut Cursor<&[u8]>,
+        replace: bool,
+        item_database: &ItemDatabase,
+    ) -> Result<()> {
+        tile.foreground_item_id = data
+            .read_u16::<LittleEndian>()
             .context("Failed to read foreground item ID")?;
-        tile.background_item_id = data.read_u16::<LittleEndian>()
+        tile.background_item_id = data
+            .read_u16::<LittleEndian>()
             .context("Failed to read background item ID")?;
-        tile.parent_block_index = data.read_u16::<LittleEndian>()
+        tile.parent_block_index = data
+            .read_u16::<LittleEndian>()
             .context("Failed to read parent block index")?;
-        let flags = data.read_u16::<LittleEndian>()
+        let flags = data
+            .read_u16::<LittleEndian>()
             .context("Failed to read tile flags")?;
         tile.flags = TileFlags::from_bits_truncate(flags);
         tile.flags_number = flags;
@@ -865,26 +883,36 @@ impl World {
         }
 
         if tile.flags.contains(TileFlags::HAS_EXTRA_DATA) {
-            let extra_tile_type = data.read_u8()
-                .context("Failed to read extra tile type")?;
+            let extra_tile_type = data.read_u8().context("Failed to read extra tile type")?;
             self.get_extra_tile_data(&mut tile, data, extra_tile_type, item_database)?;
         }
 
-        if tile.foreground_item_id == 14666 {
-            let str_len = data.read_u32::<LittleEndian>()
-                .context("Failed to read string length for special tile")?;
-            let mut text = vec![0; str_len as usize];
-            data.read_exact(&mut text)
-                .context("Failed to read special tile text")?;
-        }
+        let db_item = item_database
+            .get_item(&(tile.foreground_item_id as u32))
+            .context(format!(
+                "Failed to get item with ID {}",
+                tile.foreground_item_id
+            ))?;
 
-        // Handle item 8642 (Bountiful Lattice Fence Roots)
-        if tile.foreground_item_id == 8642 {
-            let data_len = data.read_u32::<LittleEndian>()
-                .context("Failed to read data length for item 8642")?;
-            let mut property_data = vec![0; data_len as usize];
-            data.read_exact(&mut property_data)
-                .context("Failed to read property data for item 8642")?;
+        // this one doesn't have xml file so we'll have deal with it
+        let tiles_with_cbor_data = [
+            15376, // Party Projector
+            8642,  // Bountiful Lattice Fence Roots
+        ];
+
+        if db_item.file_name.ends_with(".xml")
+            || tiles_with_cbor_data.contains(&(tile.foreground_item_id as u32))
+        {
+            let cbor_size = data.read_u32::<LittleEndian>().unwrap();
+            let mut cbor_raw = vec![0; cbor_size as usize];
+            data.read_exact(&mut cbor_raw).unwrap();
+
+            let mut reader = Cursor::new(&cbor_raw);
+            let value: ciborium::Value = ciborium::de::from_reader(&mut reader)?;
+            println!(
+                "Tile {} has CBOR value: {:?}",
+                tile.foreground_item_id, value
+            );
         }
 
         if replace {
@@ -905,7 +933,8 @@ impl World {
         self.reset();
         let mut data = Cursor::new(data);
 
-        let version = data.read_u16::<LittleEndian>()
+        let version = data
+            .read_u16::<LittleEndian>()
             .context("Failed to read version")?;
         if version < 0x19 {
             self.is_error = true;
@@ -913,20 +942,25 @@ impl World {
         }
         self.version = version;
 
-        self.flags = data.read_u32::<LittleEndian>()
+        self.flags = data
+            .read_u32::<LittleEndian>()
             .context("Failed to read world flags")?;
 
-        let str_len = data.read_u16::<LittleEndian>()
+        let str_len = data
+            .read_u16::<LittleEndian>()
             .context("Failed to read name length")?;
         let mut name = vec![0; str_len as usize];
         data.read_exact(&mut name)
             .context("Failed to read world name")?;
 
-        self.width = data.read_u32::<LittleEndian>()
+        self.width = data
+            .read_u32::<LittleEndian>()
             .context("Failed to read world width")?;
-        self.height = data.read_u32::<LittleEndian>()
+        self.height = data
+            .read_u32::<LittleEndian>()
             .context("Failed to read world height")?;
-        self.tile_count = data.read_u32::<LittleEndian>()
+        self.tile_count = data
+            .read_u32::<LittleEndian>()
             .context("Failed to read tile count")?;
 
         // Skip debug flag
@@ -952,45 +986,62 @@ impl World {
         }
 
         data.set_position(data.position() + 12);
-        
+
         // Parse dropped items
-        self.dropped.items_count = data.read_u32::<LittleEndian>()
+        self.dropped.items_count = data
+            .read_u32::<LittleEndian>()
             .context("Failed to read dropped items count")?;
-        self.dropped.last_dropped_item_uid = data.read_u32::<LittleEndian>()
+        self.dropped.last_dropped_item_uid = data
+            .read_u32::<LittleEndian>()
             .context("Failed to read last dropped item UID")?;
-            
-        self.dropped.items.reserve(self.dropped.items_count as usize);
-        
+
+        self.dropped
+            .items
+            .reserve(self.dropped.items_count as usize);
+
         for _ in 0..self.dropped.items_count {
-            let id = data.read_u16::<LittleEndian>()
+            let id = data
+                .read_u16::<LittleEndian>()
                 .context("Failed to read dropped item ID")?;
-            let x = data.read_f32::<LittleEndian>()
+            let x = data
+                .read_f32::<LittleEndian>()
                 .context("Failed to read dropped item x position")?;
-            let y = data.read_f32::<LittleEndian>()
+            let y = data
+                .read_f32::<LittleEndian>()
                 .context("Failed to read dropped item y position")?;
-            let count = data.read_u8()
+            let count = data
+                .read_u8()
                 .context("Failed to read dropped item count")?;
-            let flags = data.read_u8()
+            let flags = data
+                .read_u8()
                 .context("Failed to read dropped item flags")?;
-            let uid = data.read_u32::<LittleEndian>()
+            let uid = data
+                .read_u32::<LittleEndian>()
                 .context("Failed to read dropped item UID")?;
-                
+
             self.dropped.items.push(DroppedItem {
-                id, x, y, count, flags, uid,
+                id,
+                x,
+                y,
+                count,
+                flags,
+                uid,
             });
         }
 
         // Parse weather
-        let base_weather = data.read_u16::<LittleEndian>()
+        let base_weather = data
+            .read_u16::<LittleEndian>()
             .context("Failed to read base weather")?;
         data.read_u16::<LittleEndian>()
             .context("Failed to read unknown weather field")?;
-        let current_weather = data.read_u16::<LittleEndian>()
+        let current_weather = data
+            .read_u16::<LittleEndian>()
             .context("Failed to read current weather")?;
-            
+
         self.base_weather = WeatherType::from(base_weather);
         self.current_weather = WeatherType::from(current_weather);
-        
+
         Ok(())
     }
 
@@ -1004,46 +1055,52 @@ impl World {
         match item_type {
             1 => {
                 // TileType::Sign
-                let str_len = data.read_u16::<LittleEndian>()
+                let str_len = data
+                    .read_u16::<LittleEndian>()
                     .context("Failed to read sign text length")?;
                 let mut text = vec![0; str_len as usize];
                 data.read_exact(&mut text)
                     .context("Failed to read sign text")?;
                 let text = String::from_utf8_lossy(&text).to_string();
-                let flags = data.read_u8()
-                    .context("Failed to read sign flags")?;
+                let flags = data.read_u8().context("Failed to read sign flags")?;
 
                 tile.tile_type = TileType::Sign { text, flags };
             }
             2 => {
                 // TileType::Door
-                let str_len = data.read_u16::<LittleEndian>()
+                let str_len = data
+                    .read_u16::<LittleEndian>()
                     .context("Failed to read door text length")?;
                 let mut text = vec![0; str_len as usize];
                 data.read_exact(&mut text)
                     .context("Failed to read door text")?;
                 let text = String::from_utf8_lossy(&text).to_string();
-                let owner_uid = data.read_u32::<LittleEndian>()
+                let owner_uid = data
+                    .read_u32::<LittleEndian>()
                     .context("Failed to read door owner UID")?;
 
                 tile.tile_type = TileType::Door { text, owner_uid };
             }
             3 => {
                 // TileType::Lock
-                let settings = data.read_u8()
-                    .context("Failed to read lock settings")?;
-                let owner_uid = data.read_u32::<LittleEndian>()
+                let settings = data.read_u8().context("Failed to read lock settings")?;
+                let owner_uid = data
+                    .read_u32::<LittleEndian>()
                     .context("Failed to read lock owner UID")?;
-                let access_count = data.read_u32::<LittleEndian>()
+                let access_count = data
+                    .read_u32::<LittleEndian>()
                     .context("Failed to read lock access count")?;
-                    
+
                 let mut access_uids = Vec::with_capacity(access_count as usize);
                 for _ in 0..access_count {
-                    access_uids.push(data.read_u32::<LittleEndian>()
-                        .context("Failed to read lock access UID")?);
+                    access_uids.push(
+                        data.read_u32::<LittleEndian>()
+                            .context("Failed to read lock access UID")?,
+                    );
                 }
-                
-                let minimum_level = data.read_u8()
+
+                let minimum_level = data
+                    .read_u8()
                     .context("Failed to read lock minimum level")?;
                 let mut unknown_1 = [0; 7];
                 data.read_exact(&mut unknown_1)
@@ -1063,18 +1120,20 @@ impl World {
             }
             4 => {
                 // TileType::Seed
-                let time_passed = data.read_u32::<LittleEndian>()
+                let time_passed = data
+                    .read_u32::<LittleEndian>()
                     .context("Failed to read seed time passed")?;
-                let item_on_tree = data.read_u8()
-                    .context("Failed to read seed item on tree")?;
-                    
+                let item_on_tree = data.read_u8().context("Failed to read seed item on tree")?;
+
                 let ready_to_harvest = {
                     let item = item_database
                         .get_item(&(tile.foreground_item_id as u32))
-                        .with_context(|| format!("Failed to get item with ID {}", tile.foreground_item_id))?;
+                        .with_context(|| {
+                            format!("Failed to get item with ID {}", tile.foreground_item_id)
+                        })?;
                     item.grow_time <= time_passed
                 };
-                
+
                 // More efficient time handling
                 let elapsed = Duration::from_secs(time_passed as u64);
 
@@ -1139,17 +1198,24 @@ impl World {
             }
             9 => {
                 // TileType::ChemicalSource
-                let time_passed = data.read_u32::<LittleEndian>()
+                let time_passed = data
+                    .read_u32::<LittleEndian>()
                     .context("Failed to read chemical source time passed")?;
                 let ready_to_harvest = {
                     let item = item_database
                         .get_item(&(tile.foreground_item_id as u32))
-                        .with_context(|| format!("Failed to get item with ID {}", tile.foreground_item_id))?;
+                        .with_context(|| {
+                            format!("Failed to get item with ID {}", tile.foreground_item_id)
+                        })?;
                     time_passed >= item.grow_time
                 };
                 let elapsed = Duration::from_secs(time_passed as u64);
 
-                tile.tile_type = TileType::ChemicalSource { time_passed, ready_to_harvest, elapsed };
+                tile.tile_type = TileType::ChemicalSource {
+                    time_passed,
+                    ready_to_harvest,
+                    elapsed,
+                };
             }
             10 => {
                 // TileType::AchievementBlock
@@ -1369,6 +1435,8 @@ impl World {
                 let unknown_1 = data.read_u32::<LittleEndian>().unwrap();
                 let unknown_2 = data.read_u32::<LittleEndian>().unwrap();
                 let can_be_fed = data.read_u8().unwrap();
+                let food_saturation = data.read_u32::<LittleEndian>().unwrap();
+                let water_saturation = data.read_u32::<LittleEndian>().unwrap();
                 let color = data.read_u32::<LittleEndian>().unwrap();
                 let sick_duration = data.read_u32::<LittleEndian>().unwrap();
 
@@ -1379,6 +1447,8 @@ impl World {
                     unknown_1,
                     unknown_2,
                     can_be_fed,
+                    food_saturation,
+                    water_saturation,
                     color: SilkWormColor {
                         a: (color >> 24) as u8,
                         r: ((color >> 16) & 0xFF) as u8,
@@ -1427,15 +1497,21 @@ impl World {
                 let mut label = vec![0; label_len as usize];
                 data.read_exact(&mut label).unwrap();
                 let label = String::from_utf8_lossy(&label).to_string();
-                let base_pet = data.read_u32::<LittleEndian>().unwrap();
-                let combined_pet_1 = data.read_u32::<LittleEndian>().unwrap();
-                let combined_pet_2 = data.read_u32::<LittleEndian>().unwrap();
+
+                let mut unknown_1 = [0u8; 12];
+                data.read_exact(&mut unknown_1).unwrap();
+
+                let cbor_size = data.read_u32::<LittleEndian>().unwrap();
+                let mut cbor_raw = vec![0; cbor_size as usize];
+                data.read_exact(&mut cbor_raw).unwrap();
+
+                let mut reader = Cursor::new(&cbor_raw);
+                let extra: PetBattleCageExtra = ciborium::de::from_reader(&mut reader)?;
 
                 tile.tile_type = TileType::PetBattleCage {
                     label,
-                    base_pet,
-                    combined_pet_1,
-                    combined_pet_2,
+                    unknown_1,
+                    extra,
                 };
             }
             37 => {
@@ -1837,13 +1913,17 @@ impl World {
             }
             69 => {
                 // TileType::TesseractManipulator (item 6952)
-                let gems = data.read_u32::<LittleEndian>()
+                let gems = data
+                    .read_u32::<LittleEndian>()
                     .context("Failed to read tesseract unknown_1")?;
-                let unknown_2 = data.read_u32::<LittleEndian>()
+                let unknown_2 = data
+                    .read_u32::<LittleEndian>()
                     .context("Failed to read tesseract unknown_2")?;
-                let item_id = data.read_u32::<LittleEndian>()
+                let item_id = data
+                    .read_u32::<LittleEndian>()
                     .context("Failed to read tesseract unknown_3")?;
-                let unknown_4 = data.read_u32::<LittleEndian>()
+                let unknown_4 = data
+                    .read_u32::<LittleEndian>()
                     .context("Failed to read tesseract unknown_4")?;
 
                 tile.tile_type = TileType::TesseractManipulator {
@@ -1854,8 +1934,10 @@ impl World {
                 };
             }
             _ => {
-                eprintln!("WARNING: Completely unknown tile type {} at fg_item={}",
-                    item_type, tile.foreground_item_id);
+                eprintln!(
+                    "WARNING: Completely unknown tile type {} at fg_item={}",
+                    item_type, tile.foreground_item_id
+                );
                 tile.tile_type = TileType::Basic;
             }
         }
@@ -1863,16 +1945,199 @@ impl World {
     }
 }
 
+#[cfg(test)]
+mod render_test {
+    use std::{cell::RefCell, collections::HashMap, env, io::Read, path::PathBuf, rc::Rc};
+    use gtitem_r::structs::ItemDatabase;
+    use image::{ImageBuffer, Rgba, imageops};
+    use crate::{Tile, World};
+
+
+#[derive(Default)]
+struct RttexManager {
+    decoded: HashMap<String, Rc<ImageBuffer<Rgba<u8>, Vec<u8>>>>,
+}
+
+impl RttexManager {
+    fn get_or_decode_texture(
+        &mut self,
+        path: &str,
+        texture_x: u32,
+        texture_y: u32,
+    ) -> Rc<ImageBuffer<Rgba<u8>, Vec<u8>>> {
+        use std::collections::hash_map::Entry;
+
+        let home_dir = env::var("USERPROFILE")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| env::home_dir())
+            .expect("failed to find home dir");
+        let mut fullpath = PathBuf::new();
+        fullpath.push(home_dir);
+        fullpath.push("AppData");
+        fullpath.push("Local");
+        fullpath.push("Growtopia");
+        fullpath.push("game");
+        fullpath.push(path);
+
+        let key = fullpath.to_string_lossy().into_owned();
+
+        match self.decoded.entry(key) {
+            Entry::Occupied(o) => {
+                let full_rc = Rc::clone(o.get());
+                let cropped = imageops::crop_imm(&*full_rc, texture_x * 32, texture_y * 32, 32, 32)
+                    .to_image();
+                Rc::new(cropped)
+            }
+            Entry::Vacant(v) => {
+                let img_buf = rttex::get_image_buffer(fullpath.to_str().unwrap()).unwrap();
+                let full_rc = Rc::new(img_buf);
+                v.insert(Rc::clone(&full_rc));
+
+                let cropped = imageops::crop_imm(&*full_rc, texture_x * 32, texture_y * 32, 32, 32)
+                    .to_image();
+                Rc::new(cropped)
+            }
+        }
+    }
+}
+
+trait Renderer {
+    fn draw(&mut self, tile: &Tile);
+}
+
+struct TextureRenderer {
+    buf: ImageBuffer<Rgba<u8>, Vec<u8>>,
+    item_database: Rc<ItemDatabase>,
+    texmgr: Rc<RefCell<RttexManager>>,
+}
+
+impl TextureRenderer {
+    fn new(
+        width: u32,
+        height: u32,
+        item_database: Rc<ItemDatabase>,
+        texmgr: Rc<RefCell<RttexManager>>,
+    ) -> Self {
+        Self {
+            buf: ImageBuffer::new(width * 32, height * 32),
+            item_database,
+            texmgr,
+        }
+    }
+}
+
+impl Renderer for TextureRenderer {
+    fn draw(&mut self, tile: &Tile) {
+        // TODO: rather than sequentially render tile by tile,
+        // its more efficient to batch render all the same tile id at once
+        for tile_id in [tile.background_item_id, tile.foreground_item_id] {
+            if let Some(item) = self.item_database.get_item(&(tile_id as u32)) {
+                if !item.texture_file_name.is_empty() && item.name != "Blank" {
+                    let tex_rc = {
+                        let mut mgr = self.texmgr.borrow_mut();
+                        mgr.get_or_decode_texture(
+                            &item.texture_file_name,
+                            item.texture_x.into(),
+                            item.texture_y.into(),
+                        )
+                    };
+
+                    // overlay expects &ImageBuffer; Rc derefs to the inner value
+                    let tex_ref: &ImageBuffer<Rgba<u8>, Vec<u8>> = &*tex_rc;
+                    image::imageops::overlay(
+                        &mut self.buf,
+                        tex_ref,
+                        (tile.x as i64) * 32,
+                        (tile.y as i64) * 32,
+                    );
+                }
+            }
+        }
+    }
+}
+
+struct ColorRenderer {
+    buf: ImageBuffer<Rgba<u8>, Vec<u8>>,
+    item_database: Rc<ItemDatabase>,
+}
+
+impl ColorRenderer {
+    fn new(
+        width: u32,
+        height: u32,
+        item_database: Rc<ItemDatabase>,
+    ) -> Self {
+        Self {
+            buf: ImageBuffer::new(width * 32, height * 32),
+            item_database,
+        }
+    }
+}
+
+impl Renderer for ColorRenderer {
+    fn draw(&mut self, tile: &Tile) {
+        let color = 
+                // Highlight Tesseract Manipulator (6952) in pink/rose
+                {if tile.foreground_item_id == 6952 || tile.background_item_id == 6952 {
+                    Rgba([255, 105, 180, 255]) // Hot pink for Tesseract Manipulator
+                } else if tile.foreground_item_id > self.item_database.item_count as u16 {
+                    Rgba([255, 0, 255, 255]) // Magenta for invalid item ID
+                } else if let Some(item) = self.item_database.get_item(&(tile.foreground_item_id as u32)) {
+                    if item.name == "Blank" {
+                        if tile.background_item_id != 0
+                            && tile.background_item_id <= self.item_database.item_count as u16
+                        {
+                            if let Some(bg_item) =
+                                self.item_database.get_item(&(tile.background_item_id as u32 + 1))
+                            {
+                                let colors = bg_item.base_color;
+                                let r = ((colors >> 24) & 0xFF) as u8;
+                                let g = ((colors >> 16) & 0xFF) as u8;
+                                let b = ((colors >> 8) & 0xFF) as u8;
+                                Rgba([b, g, r, 255])
+                            } else {
+                                Rgba([255, 255, 0, 255]) // Yellow for failed bg lookup
+                            }
+                        } else {
+                            Rgba([96, 215, 242, 255]) // Sky blue for blank
+                        }
+                    } else {
+                        if let Some(fg_item) =
+                            self.item_database.get_item(&(tile.foreground_item_id as u32 + 1))
+                        {
+                            let colors = fg_item.base_color;
+                            let r = ((colors >> 24) & 0xFF) as u8;
+                            let g = ((colors >> 16) & 0xFF) as u8;
+                            let b = ((colors >> 8) & 0xFF) as u8;
+                            Rgba([b, g, r, 255])
+                        } else {
+                            Rgba([255, 255, 0, 255]) // Yellow for failed fg lookup
+                        }
+                    }
+                } else {
+                    Rgba([255, 255, 0, 255]) // Yellow for failed item lookup
+                }};
+
+        for px in 0..32 {
+            for py in 0..32 {
+                let pixel_x = (tile.x * 32 + px) as u32;
+                let pixel_y = (tile.y * 32 + py) as u32;
+                self.buf.put_pixel(pixel_x, pixel_y, color);
+            }
+        }
+    }
+}
+
 #[test]
 fn test_render_world() {
     use gtitem_r::load_from_file;
-    use image::{ImageBuffer, Rgba};
     use std::fs::File;
 
     let item_database = load_from_file("items.dat").unwrap();
     let mut world = World::new();
 
-    let mut file = File::open("world.dat").unwrap();
+    let mut file = File::open("worlds/petq.dat").unwrap();
     let mut data = Vec::new();
     file.read_to_end(&mut data).unwrap();
 
@@ -1882,64 +2147,33 @@ fn test_render_world() {
     println!("World version: {}", world.version);
     println!("Tiles: {}", world.tiles.len());
 
-    let item_pixel_size = 32;
-    let img_width = world.width * item_pixel_size;
-    let img_height = world.height * item_pixel_size;
-    let mut img = ImageBuffer::<Rgba<u8>, Vec<u8>>::new(img_width as u32, img_height as u32);
+    let item_database = Rc::new(item_database);
+    let texmgr = RttexManager::default();
+    let texmgr = Rc::new(RefCell::new(texmgr));
+
+    let mut tex_renderer = TextureRenderer::new(
+        world.width,
+        world.height,
+        Rc::clone(&item_database),
+        Rc::clone(&texmgr),
+    );
+
+    let mut color_renderer = ColorRenderer::new(
+        world.width,
+        world.height,
+        Rc::clone(&item_database),
+    );
 
     for y in 0..world.height {
         for x in 0..world.width {
-            let color = match world.get_tile(x, y) {
-                Some(tile) => {
-                    // Highlight Tesseract Manipulator (6952) in pink/rose
-                    if tile.foreground_item_id == 6952 || tile.background_item_id == 6952 {
-                        Rgba([255, 105, 180, 255]) // Hot pink for Tesseract Manipulator
-                    } else if tile.foreground_item_id > item_database.item_count as u16 {
-                        Rgba([255, 0, 255, 255]) // Magenta for invalid item ID
-                    } else if let Some(item) = item_database.get_item(&(tile.foreground_item_id as u32)) {
-                        if item.name == "Blank" {
-                            if tile.background_item_id != 0 && tile.background_item_id <= item_database.item_count as u16 {
-                                if let Some(bg_item) = item_database.get_item(&(tile.background_item_id as u32 + 1)) {
-                                    let colors = bg_item.base_color;
-                                    let r = ((colors >> 24) & 0xFF) as u8;
-                                    let g = ((colors >> 16) & 0xFF) as u8;
-                                    let b = ((colors >> 8) & 0xFF) as u8;
-                                    Rgba([b, g, r, 255])
-                                } else {
-                                    Rgba([255, 255, 0, 255]) // Yellow for failed bg lookup
-                                }
-                            } else {
-                                Rgba([96, 215, 242, 255]) // Sky blue for blank
-                            }
-                        } else {
-                            if let Some(fg_item) = item_database.get_item(&(tile.foreground_item_id as u32 + 1)) {
-                                let colors = fg_item.base_color;
-                                let r = ((colors >> 24) & 0xFF) as u8;
-                                let g = ((colors >> 16) & 0xFF) as u8;
-                                let b = ((colors >> 8) & 0xFF) as u8;
-                                Rgba([b, g, r, 255])
-                            } else {
-                                Rgba([255, 255, 0, 255]) // Yellow for failed fg lookup
-                            }
-                        }
-                    } else {
-                        Rgba([255, 255, 0, 255]) // Yellow for failed item lookup
-                    }
-                }
-                None => {
-                    Rgba([255, 255, 0, 255]) // Yellow for missing tile
-                }
-            };
-
-            for px in 0..item_pixel_size {
-                for py in 0..item_pixel_size {
-                    let pixel_x = (x * item_pixel_size + px) as u32;
-                    let pixel_y = (y * item_pixel_size + py) as u32;
-                    img.put_pixel(pixel_x, pixel_y, color);
-                }
+            if let Some(tile) = world.get_tile(x, y) {
+                tex_renderer.draw(tile);
+                color_renderer.draw(tile);
             }
         }
     }
 
-    img.save("output.png").unwrap();
+    tex_renderer.buf.save("output-texture.png").unwrap();
+    color_renderer.buf.save("output-color.png").unwrap();
+}
 }
