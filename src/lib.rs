@@ -230,12 +230,6 @@ impl From<u16> for WeatherType {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PetBattleCageExtra {
-    damage: u32,
-    pet: Vec<u32>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum TileType {
     Basic,
     Door {
@@ -377,6 +371,8 @@ pub enum TileType {
         unknown_1: u32,
         unknown_2: u32,
         can_be_fed: u8,
+        food_saturation: u32,
+        water_saturation: u32,
         color: SilkWormColor,
         sick_duration: u32,
     },
@@ -575,6 +571,12 @@ pub struct CookingOvenIngredientInfo {
 pub struct CyBotCommandData {
     pub command_id: u32,
     pub is_command_used: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PetBattleCageExtra {
+    damage: u32,
+    pet: Vec<u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -1433,6 +1435,8 @@ impl World {
                 let unknown_1 = data.read_u32::<LittleEndian>().unwrap();
                 let unknown_2 = data.read_u32::<LittleEndian>().unwrap();
                 let can_be_fed = data.read_u8().unwrap();
+                let food_saturation = data.read_u32::<LittleEndian>().unwrap();
+                let water_saturation = data.read_u32::<LittleEndian>().unwrap();
                 let color = data.read_u32::<LittleEndian>().unwrap();
                 let sick_duration = data.read_u32::<LittleEndian>().unwrap();
 
@@ -1443,6 +1447,8 @@ impl World {
                     unknown_1,
                     unknown_2,
                     can_be_fed,
+                    food_saturation,
+                    water_saturation,
                     color: SilkWormColor {
                         a: (color >> 24) as u8,
                         r: ((color >> 16) & 0xFF) as u8,
