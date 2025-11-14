@@ -907,7 +907,10 @@ impl World {
 
             let mut reader = Cursor::new(&cbor_raw);
             let value: ciborium::Value = ciborium::de::from_reader(&mut reader)?;
-            println!("Tile {} has CBOR value: {:?}", tile.foreground_item_id, value);
+            println!(
+                "Tile {} has CBOR value: {:?}",
+                tile.foreground_item_id, value
+            );
         }
 
         if replace {
@@ -1936,10 +1939,193 @@ impl World {
     }
 }
 
+#[cfg(test)]
+mod render_test {
+    use std::{cell::RefCell, collections::HashMap, env, io::Read, path::PathBuf, rc::Rc};
+    use gtitem_r::structs::ItemDatabase;
+    use image::{ImageBuffer, Rgba, imageops};
+    use crate::{Tile, World};
+
+
+#[derive(Default)]
+struct RttexManager {
+    decoded: HashMap<String, Rc<ImageBuffer<Rgba<u8>, Vec<u8>>>>,
+}
+
+impl RttexManager {
+    fn get_or_decode_texture(
+        &mut self,
+        path: &str,
+        texture_x: u32,
+        texture_y: u32,
+    ) -> Rc<ImageBuffer<Rgba<u8>, Vec<u8>>> {
+        use std::collections::hash_map::Entry;
+
+        let home_dir = env::var("USERPROFILE")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| env::home_dir())
+            .expect("failed to find home dir");
+        let mut fullpath = PathBuf::new();
+        fullpath.push(home_dir);
+        fullpath.push("AppData");
+        fullpath.push("Local");
+        fullpath.push("Growtopia");
+        fullpath.push("game");
+        fullpath.push(path);
+
+        let key = fullpath.to_string_lossy().into_owned();
+
+        match self.decoded.entry(key) {
+            Entry::Occupied(o) => {
+                let full_rc = Rc::clone(o.get());
+                let cropped = imageops::crop_imm(&*full_rc, texture_x * 32, texture_y * 32, 32, 32)
+                    .to_image();
+                Rc::new(cropped)
+            }
+            Entry::Vacant(v) => {
+                let img_buf = rttex::get_image_buffer(fullpath.to_str().unwrap()).unwrap();
+                let full_rc = Rc::new(img_buf);
+                v.insert(Rc::clone(&full_rc));
+
+                let cropped = imageops::crop_imm(&*full_rc, texture_x * 32, texture_y * 32, 32, 32)
+                    .to_image();
+                Rc::new(cropped)
+            }
+        }
+    }
+}
+
+trait Renderer {
+    fn draw(&mut self, tile: &Tile);
+}
+
+struct TextureRenderer {
+    buf: ImageBuffer<Rgba<u8>, Vec<u8>>,
+    item_database: Rc<ItemDatabase>,
+    texmgr: Rc<RefCell<RttexManager>>,
+}
+
+impl TextureRenderer {
+    fn new(
+        width: u32,
+        height: u32,
+        item_database: Rc<ItemDatabase>,
+        texmgr: Rc<RefCell<RttexManager>>,
+    ) -> Self {
+        Self {
+            buf: ImageBuffer::new(width * 32, height * 32),
+            item_database,
+            texmgr,
+        }
+    }
+}
+
+impl Renderer for TextureRenderer {
+    fn draw(&mut self, tile: &Tile) {
+        // TODO: rather than sequentially render tile by tile,
+        // its more efficient to batch render all the same tile id at once
+        for tile_id in [tile.background_item_id, tile.foreground_item_id] {
+            if let Some(item) = self.item_database.get_item(&(tile_id as u32)) {
+                if !item.texture_file_name.is_empty() && item.name != "Blank" {
+                    let tex_rc = {
+                        let mut mgr = self.texmgr.borrow_mut();
+                        mgr.get_or_decode_texture(
+                            &item.texture_file_name,
+                            item.texture_x.into(),
+                            item.texture_y.into(),
+                        )
+                    };
+
+                    // overlay expects &ImageBuffer; Rc derefs to the inner value
+                    let tex_ref: &ImageBuffer<Rgba<u8>, Vec<u8>> = &*tex_rc;
+                    image::imageops::overlay(
+                        &mut self.buf,
+                        tex_ref,
+                        (tile.x as i64) * 32,
+                        (tile.y as i64) * 32,
+                    );
+                }
+            }
+        }
+    }
+}
+
+struct ColorRenderer {
+    buf: ImageBuffer<Rgba<u8>, Vec<u8>>,
+    item_database: Rc<ItemDatabase>,
+}
+
+impl ColorRenderer {
+    fn new(
+        width: u32,
+        height: u32,
+        item_database: Rc<ItemDatabase>,
+    ) -> Self {
+        Self {
+            buf: ImageBuffer::new(width * 32, height * 32),
+            item_database,
+        }
+    }
+}
+
+impl Renderer for ColorRenderer {
+    fn draw(&mut self, tile: &Tile) {
+        let color = 
+                // Highlight Tesseract Manipulator (6952) in pink/rose
+                {if tile.foreground_item_id == 6952 || tile.background_item_id == 6952 {
+                    Rgba([255, 105, 180, 255]) // Hot pink for Tesseract Manipulator
+                } else if tile.foreground_item_id > self.item_database.item_count as u16 {
+                    Rgba([255, 0, 255, 255]) // Magenta for invalid item ID
+                } else if let Some(item) = self.item_database.get_item(&(tile.foreground_item_id as u32)) {
+                    if item.name == "Blank" {
+                        if tile.background_item_id != 0
+                            && tile.background_item_id <= self.item_database.item_count as u16
+                        {
+                            if let Some(bg_item) =
+                                self.item_database.get_item(&(tile.background_item_id as u32 + 1))
+                            {
+                                let colors = bg_item.base_color;
+                                let r = ((colors >> 24) & 0xFF) as u8;
+                                let g = ((colors >> 16) & 0xFF) as u8;
+                                let b = ((colors >> 8) & 0xFF) as u8;
+                                Rgba([b, g, r, 255])
+                            } else {
+                                Rgba([255, 255, 0, 255]) // Yellow for failed bg lookup
+                            }
+                        } else {
+                            Rgba([96, 215, 242, 255]) // Sky blue for blank
+                        }
+                    } else {
+                        if let Some(fg_item) =
+                            self.item_database.get_item(&(tile.foreground_item_id as u32 + 1))
+                        {
+                            let colors = fg_item.base_color;
+                            let r = ((colors >> 24) & 0xFF) as u8;
+                            let g = ((colors >> 16) & 0xFF) as u8;
+                            let b = ((colors >> 8) & 0xFF) as u8;
+                            Rgba([b, g, r, 255])
+                        } else {
+                            Rgba([255, 255, 0, 255]) // Yellow for failed fg lookup
+                        }
+                    }
+                } else {
+                    Rgba([255, 255, 0, 255]) // Yellow for failed item lookup
+                }};
+
+        for px in 0..32 {
+            for py in 0..32 {
+                let pixel_x = (tile.x * 32 + px) as u32;
+                let pixel_y = (tile.y * 32 + py) as u32;
+                self.buf.put_pixel(pixel_x, pixel_y, color);
+            }
+        }
+    }
+}
+
 #[test]
 fn test_render_world() {
     use gtitem_r::load_from_file;
-    use image::{ImageBuffer, Rgba};
     use std::fs::File;
 
     let item_database = load_from_file("items.dat").unwrap();
@@ -1955,72 +2141,33 @@ fn test_render_world() {
     println!("World version: {}", world.version);
     println!("Tiles: {}", world.tiles.len());
 
-    let item_pixel_size = 32;
-    let img_width = world.width * item_pixel_size;
-    let img_height = world.height * item_pixel_size;
-    let mut img = ImageBuffer::<Rgba<u8>, Vec<u8>>::new(img_width as u32, img_height as u32);
+    let item_database = Rc::new(item_database);
+    let texmgr = RttexManager::default();
+    let texmgr = Rc::new(RefCell::new(texmgr));
+
+    let mut tex_renderer = TextureRenderer::new(
+        world.width,
+        world.height,
+        Rc::clone(&item_database),
+        Rc::clone(&texmgr),
+    );
+
+    let mut color_renderer = ColorRenderer::new(
+        world.width,
+        world.height,
+        Rc::clone(&item_database),
+    );
 
     for y in 0..world.height {
         for x in 0..world.width {
-            let color = match world.get_tile(x, y) {
-                Some(tile) => {
-                    // Highlight Tesseract Manipulator (6952) in pink/rose
-                    if tile.foreground_item_id == 6952 || tile.background_item_id == 6952 {
-                        Rgba([255, 105, 180, 255]) // Hot pink for Tesseract Manipulator
-                    } else if tile.foreground_item_id > item_database.item_count as u16 {
-                        Rgba([255, 0, 255, 255]) // Magenta for invalid item ID
-                    } else if let Some(item) =
-                        item_database.get_item(&(tile.foreground_item_id as u32))
-                    {
-                        if item.name == "Blank" {
-                            if tile.background_item_id != 0
-                                && tile.background_item_id <= item_database.item_count as u16
-                            {
-                                if let Some(bg_item) =
-                                    item_database.get_item(&(tile.background_item_id as u32 + 1))
-                                {
-                                    let colors = bg_item.base_color;
-                                    let r = ((colors >> 24) & 0xFF) as u8;
-                                    let g = ((colors >> 16) & 0xFF) as u8;
-                                    let b = ((colors >> 8) & 0xFF) as u8;
-                                    Rgba([b, g, r, 255])
-                                } else {
-                                    Rgba([255, 255, 0, 255]) // Yellow for failed bg lookup
-                                }
-                            } else {
-                                Rgba([96, 215, 242, 255]) // Sky blue for blank
-                            }
-                        } else {
-                            if let Some(fg_item) =
-                                item_database.get_item(&(tile.foreground_item_id as u32 + 1))
-                            {
-                                let colors = fg_item.base_color;
-                                let r = ((colors >> 24) & 0xFF) as u8;
-                                let g = ((colors >> 16) & 0xFF) as u8;
-                                let b = ((colors >> 8) & 0xFF) as u8;
-                                Rgba([b, g, r, 255])
-                            } else {
-                                Rgba([255, 255, 0, 255]) // Yellow for failed fg lookup
-                            }
-                        }
-                    } else {
-                        Rgba([255, 255, 0, 255]) // Yellow for failed item lookup
-                    }
-                }
-                None => {
-                    Rgba([255, 255, 0, 255]) // Yellow for missing tile
-                }
-            };
-
-            for px in 0..item_pixel_size {
-                for py in 0..item_pixel_size {
-                    let pixel_x = (x * item_pixel_size + px) as u32;
-                    let pixel_y = (y * item_pixel_size + py) as u32;
-                    img.put_pixel(pixel_x, pixel_y, color);
-                }
+            if let Some(tile) = world.get_tile(x, y) {
+                tex_renderer.draw(tile);
+                color_renderer.draw(tile);
             }
         }
     }
 
-    img.save("output.png").unwrap();
+    tex_renderer.buf.save("output-texture.png").unwrap();
+    color_renderer.buf.save("output-color.png").unwrap();
+}
 }

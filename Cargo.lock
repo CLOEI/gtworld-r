@@ -370,6 +370,7 @@ dependencies = [
  "ciborium",
  "gtitem-r",
  "image",
+ "rttex",
  "serde",
  "serde_json",
 ]
@@ -839,6 +840,16 @@ name = "rgb"
 version = "0.8.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c6a884d2998352bb4daf0183589aec883f16a6da1f4dde84d8e2e9a5409a1ce"
+
+[[package]]
+name = "rttex"
+version = "0.1.0"
+source = "git+https://github.com/CLOEI/rttex#f1c3f786724f8a3d697c36a9c128870e7c723dd3"
+dependencies = [
+ "byteorder",
+ "flate2",
+ "image",
+]
 
 [[package]]
 name = "rustversion"
