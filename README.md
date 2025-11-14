@@ -8,7 +8,7 @@ World tile serialization
 
 ## About The Project
 
-This is a Growtopia world tile serialization library. This library also depends on an [items.dat parser](https://github.com/CLOEI/gtitem-r), so make sure to install it as well to be able to use this library.
+This is a Growtopia world tile serialization library. This library also depends on [items.dat parser](https://github.com/CLOEI/gtitem-r) and [rttex parser](https://github.com/CLOEI/rttex), so make sure to install it as well to be able to use this library.
 
 ## Usage
 
@@ -21,6 +21,13 @@ fn main() {
   let world = World::new().parse(world_data, &item_database);
   println!("{:?}", world)
 }
+```
+
+> [!NOTE]
+> To run the test--If you have unconventional Growtopia installation or not in Windows--you need to modify the path to the Growtopia asset directory `<Growtopia>/game/`
+
+```bash
+$ cargo test -- -nocapture
 ```
 
 ## Property
