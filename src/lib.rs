@@ -462,7 +462,11 @@ pub enum TileType {
         volume: u32,
     },
     GeigerCharger {
-        unknown_1: u32,
+        seconds_from_start: u32,
+        seconds_to_complete: u32,
+        charging_percent: u32,
+        minutes_from_start: u32,
+        minutes_to_complete: u32,
     },
     AdventureBegins,
     TombRobber,
@@ -1720,8 +1724,23 @@ impl World {
             }
             57 => {
                 // TileType::GeigerCharger
-                let unknown_1 = data.read_u32::<LittleEndian>().unwrap();
-                tile.tile_type = TileType::GeigerCharger { unknown_1 };
+                let raw = data.read_u32::<LittleEndian>().unwrap();
+
+                let seconds_from_start = raw.min(3600);
+                let seconds_to_complete = 3600 - seconds_from_start;
+                
+                let charging_percent = seconds_from_start / 36;
+                
+                let minutes_from_start = seconds_from_start / 60;
+                let minutes_to_complete = 60u32.saturating_sub(minutes_from_start);
+                
+                tile.tile_type = TileType::GeigerCharger {
+                    seconds_from_start,
+                    seconds_to_complete,
+                    charging_percent,
+                    minutes_from_start,
+                    minutes_to_complete,
+                };
             }
             58 => {
                 // TileType::AdventureBegins
