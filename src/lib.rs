@@ -902,6 +902,7 @@ impl World {
         let tiles_with_cbor_data = [
             15376, // Party Projector
             8642,  // Bountiful Lattice Fence Roots
+            15546, // Auction Block
         ];
 
         if db_item.file_name.ends_with(".xml")
