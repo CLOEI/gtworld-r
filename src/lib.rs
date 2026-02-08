@@ -387,7 +387,6 @@ pub enum TileType {
     PetBattleCage {
         label: String,
         unknown_1: [u8; 12],
-        extra: PetBattleCageExtra,
     },
     PetTrainer {
         name: String,
@@ -575,12 +574,6 @@ pub struct CookingOvenIngredientInfo {
 pub struct CyBotCommandData {
     pub command_id: u32,
     pub is_command_used: u32,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PetBattleCageExtra {
-    damage: u32,
-    pet: Vec<u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -891,22 +884,32 @@ impl World {
             self.get_extra_tile_data(&mut tile, data, extra_tile_type, item_database)?;
         }
 
-        let db_item = item_database
-            .get_item(&(tile.foreground_item_id as u32))
-            .context(format!(
-                "Failed to get item with ID {}",
-                tile.foreground_item_id
-            ))?;
-
-        // this one doesn't have xml file so we'll have deal with it
         let tiles_with_cbor_data = [
             15376, // Party Projector
-            8642,  // Bountiful Lattice Fence Roots
             15546, // Auction Block
+            3548,  // Battle Pet Cage
+            12598, // Offering Table
+            14662, // Operating Table
+            14666, // Auto Surgeon Station
+            8624,  // Bountiful Flowering Lattice Roots
+            8630,  // Bountiful Climbing Hydrangea Lattice Roots
+            8636,  // Bountiful Flowering Garland Roots
+            8642,  // Bountiful Lattice Fence Roots
+            8648,  // Bountiful Jungle Temple Roots
+            8654,  // Bountiful Jungle Temple Background Roots
+            8660,  // Bountiful Jungle Temple Door Roots
+            8666,  // Bountiful Jungle Temple Pillar Roots
+            8672,  // Bountiful Bamboo Background Roots
+            8678,  // Bountiful Bamboo Platform Roots
+            8684,  // Bountiful Bamboo Ladder Roots
+            8690,  // Bountiful Bamboo Spikes Roots
+            8696,  // Bountiful White Doll's Eyes Roots
+            8702,  // Bountiful Monkshood Roots
+            8708,  // Bountiful Corpse Flower Roots
+            8714,  // Bountiful Growtopian-Eating Looming Plant Roots
         ];
 
-        if db_item.file_name.ends_with(".xml")
-            || tiles_with_cbor_data.contains(&(tile.foreground_item_id as u32))
+        if tiles_with_cbor_data.contains(&(tile.foreground_item_id as u32))
         {
             let cbor_size = data.read_u32::<LittleEndian>().unwrap();
             let mut cbor_raw = vec![0; cbor_size as usize];
@@ -1506,17 +1509,9 @@ impl World {
                 let mut unknown_1 = [0u8; 12];
                 data.read_exact(&mut unknown_1).unwrap();
 
-                let cbor_size = data.read_u32::<LittleEndian>().unwrap();
-                let mut cbor_raw = vec![0; cbor_size as usize];
-                data.read_exact(&mut cbor_raw).unwrap();
-
-                let mut reader = Cursor::new(&cbor_raw);
-                let extra: PetBattleCageExtra = ciborium::de::from_reader(&mut reader)?;
-
                 tile.tile_type = TileType::PetBattleCage {
                     label,
                     unknown_1,
-                    extra,
                 };
             }
             37 => {
@@ -2157,7 +2152,7 @@ fn test_render_world() {
     let item_database = load_from_file("items.dat").unwrap();
     let mut world = World::new();
 
-    let mut file = File::open("worlds/petq.dat").unwrap();
+    let mut file = File::open("worlds/BUYROOT.dat").unwrap();
     let mut data = Vec::new();
     file.read_to_end(&mut data).unwrap();
 
