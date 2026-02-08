@@ -34,6 +34,7 @@ pub struct Tile {
     pub y: u32,
 
     pub tile_type: TileType,
+    pub cbor: Option<ciborium::Value>,
 }
 
 bitflags! {
@@ -628,6 +629,7 @@ impl Tile {
             tile_type: TileType::Basic,
             x,
             y,
+            cbor: None,
         }
     }
 
@@ -884,7 +886,7 @@ impl World {
             self.get_extra_tile_data(&mut tile, data, extra_tile_type, item_database)?;
         }
 
-        let tiles_with_cbor_data = [
+        const TILES_WITH_CBOR_DATA: &[u32] = &[
             15376, // Party Projector
             15546, // Auction Block
             3548,  // Battle Pet Cage
@@ -909,17 +911,17 @@ impl World {
             8714,  // Bountiful Growtopian-Eating Looming Plant Roots
         ];
 
-        if tiles_with_cbor_data.contains(&(tile.foreground_item_id as u32))
+        if TILES_WITH_CBOR_DATA.contains(&(tile.foreground_item_id as u32))
         {
             let cbor_size = data.read_u32::<LittleEndian>().unwrap();
             let mut cbor_raw = vec![0; cbor_size as usize];
             data.read_exact(&mut cbor_raw).unwrap();
 
             let mut reader = Cursor::new(&cbor_raw);
-            let value: ciborium::Value = ciborium::de::from_reader(&mut reader)?;
+            tile.cbor = Some(ciborium::de::from_reader(&mut reader)?);
             println!(
-                "Tile {} has CBOR value: {:?}",
-                tile.foreground_item_id, value
+                "Tile at ({}, {}) has CBOR value: {:?}",
+                tile.x, tile.y, tile
             );
         }
 
